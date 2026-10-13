@@ -14,7 +14,7 @@ The cornerstone of the project lifecycle. This is where students form their idea
 * **Auto-Locking:** Once submitted, the proposal is strictly **locked**. Students cannot edit a pending proposal.
 * **Revision Cycles:** If faculty requests revisions, the specific proposal unlocks. Students can edit and resubmit without consuming a new slot.
 * **Rejection Refunds:** If a proposal is fully rejected, the slot is refunded, allowing the student to submit a completely new idea.
-* **Official Project Activation:** Once **one** proposal is `APPROVED`, all other pending proposals are automatically archived. Development modules (SRS, Kanban, etc.) are unlocked.
+* **Independent Proposal Slots & Activation:** Students can create, draft, and submit up to 3 separate project proposals. Proposals are evaluated independently, and students can continue to draft and submit proposals up to their 3 active slots even if one proposal is already approved.
 * **Post-Approval Change Requests:** Students cannot directly edit an approved project. They must use the "Request Changes" modal, selecting specific fields (e.g., Tech Stack, Problem Statement) they want to alter.
 
 ### Faculty Capabilities

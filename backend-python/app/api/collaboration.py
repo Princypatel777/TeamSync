@@ -497,13 +497,24 @@ async def get_chat_messages(
 
         messages = sorted(msgs_sent + msgs_recv, key=lambda m: m.created_at or datetime.min)
 
-        # Mark as read
-        for msg in messages:
-            if msg.sender_id != user_id and user_id not in (msg.read_by or []):
-                msg.read_by = list(msg.read_by or []) + [user_id]
-                await msg.save()
+        active_proj = await Project.get(project_id)
+        proj_dict = None
+        if active_proj:
+            group_dict = None
+            if active_proj.group_id:
+                g = await ProjectGroup.get(active_proj.group_id)
+                if g:
+                    group_dict = {"_id": str(g.id), "name": g.name, "code": g.code}
+            proj_dict = {
+                "_id": str(active_proj.id),
+                "title": active_proj.title,
+                "projectKey": active_proj.project_key,
+                "domain": active_proj.domain,
+                "status": active_proj.status,
+                "group": group_dict,
+            }
 
-        return {"success": True, "messages": [m.dict() for m in messages]}
+        return {"success": True, "messages": [m.dict() for m in messages], "project": proj_dict}
 
     # GROUP / FACULTY channels
     messages = await ChatMessage.find(*query_filter).sort(+ChatMessage.created_at).to_list()
@@ -514,7 +525,24 @@ async def get_chat_messages(
             msg.read_by = list(msg.read_by or []) + [user_id]
             await msg.save()
 
-    return {"success": True, "messages": [m.dict() for m in messages]}
+    active_proj = await Project.get(project_id)
+    proj_dict = None
+    if active_proj:
+        group_dict = None
+        if active_proj.group_id:
+            g = await ProjectGroup.get(active_proj.group_id)
+            if g:
+                group_dict = {"_id": str(g.id), "name": g.name, "code": g.code}
+        proj_dict = {
+            "_id": str(active_proj.id),
+            "title": active_proj.title,
+            "projectKey": active_proj.project_key,
+            "domain": active_proj.domain,
+            "status": active_proj.status,
+            "group": group_dict,
+        }
+
+    return {"success": True, "messages": [m.dict() for m in messages], "project": proj_dict}
 
 
 @router.get("/chat/unread", summary="Get unread chat message counts")

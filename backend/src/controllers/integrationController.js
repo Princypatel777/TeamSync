@@ -30,7 +30,7 @@ export const getGithubConfig = async (req, res, next) => {
 export const connectGithubRepo = async (req, res, next) => {
   try {
     const user = req.user;
-    const { repoUrl, action, accessToken, personalAccessToken, projectId: bodyProjectId } = req.body;
+    const { repoUrl, action, accessToken, projectId: bodyProjectId } = req.body;
     
     let projectId;
     if (user.role === 'STUDENT') {
@@ -93,7 +93,7 @@ export const connectGithubRepo = async (req, res, next) => {
 
     // 3. Verify repository existence via GitHub API
     let defaultBranch = 'main';
-    const effectiveToken = (personalAccessToken || accessToken)?.trim() || existingIntegration?.accessToken;
+    const effectiveToken = accessToken?.trim() || existingIntegration?.accessToken;
     const ghHeaders = {
       'User-Agent': 'TeamSync-Academic-Platform',
       'Accept': 'application/vnd.github.v3+json',
@@ -108,13 +108,10 @@ export const connectGithubRepo = async (req, res, next) => {
       });
 
       if (ghCheckRes.status === 404) {
-        if (!effectiveToken) {
-          return res.status(404).json({
-            success: false,
-            message: `Repository "${owner}/${repoName}" was not found on GitHub. If this is a private repository, please provide a GitHub Personal Access Token.`
-          });
-        }
-        defaultBranch = 'main';
+        return res.status(404).json({
+          success: false,
+          message: `Repository "${owner}/${repoName}" was not found on GitHub. If this is a private repository, please provide a GitHub Personal Access Token.`
+        });
       } else if (ghCheckRes.ok) {
         const ghRepoData = await ghCheckRes.json();
         defaultBranch = ghRepoData.default_branch || 'main';

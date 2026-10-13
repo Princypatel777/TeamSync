@@ -88,91 +88,53 @@ export const FacultyDashboardPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {groups.map((group) => (
               <div key={group._id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow">
-                <div className="p-5 flex-1 space-y-3">
-                  {/* Group Header */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-slate-800 text-base block">
-                        {group.name || `Group ${group.code}`}
-                      </span>
-                      <span className="text-xs font-mono text-slate-400">
-                        Code: {group.code}
-                      </span>
-                    </div>
+                <div className="p-5 flex-1">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded text-xs font-bold font-mono tracking-wider">
+                      {group.code}
+                    </span>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      group.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      group.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
                     }`}>
                       {group.status}
                     </span>
                   </div>
                   
-                  {/* Project Title */}
-                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Project</span>
-                    <h4 className="text-sm font-bold text-slate-900 line-clamp-1" title={group.activeProject ? group.activeProject.title : 'No Approved Project'}>
-                      {group.activeProject ? group.activeProject.title : 'No Approved Project'}
-                    </h4>
-                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">
+                    {group.activeProject ? group.activeProject.title : 'No Approved Project'}
+                  </h3>
                   
-                  {/* Students & Tasks Metrics */}
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                      <div className="font-bold text-slate-800">{group.studentCount || 0}</div>
-                      <div className="text-[10px] text-slate-400 uppercase">Students</div>
-                    </div>
-                    <div className="bg-amber-50/60 p-2 rounded-lg border border-amber-100">
-                      <div className="font-bold text-amber-700">{group.pendingTasksCount || 0}</div>
-                      <div className="text-[10px] text-amber-600 uppercase">Pending</div>
-                    </div>
-                    <div className="bg-emerald-50/60 p-2 rounded-lg border border-emerald-100">
-                      <div className="font-bold text-emerald-700">{group.completedTasksCount || 0}</div>
-                      <div className="text-[10px] text-emerald-600 uppercase">Completed</div>
-                    </div>
+                  <div className="flex items-center space-x-2 text-xs text-slate-500 mb-4">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>{group.studentCount} Students</span>
                   </div>
 
                   {/* Progress Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-semibold text-slate-500">
-                      <span>Overall Progress</span>
-                      <span className="font-bold text-blue-600">{group.progress || 0}%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                      <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                        style={{ width: `${group.progress || 0}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Upcoming Deadlines */}
-                  {group.upcomingDeadlines && group.upcomingDeadlines.length > 0 && (
-                    <div className="text-xs p-2.5 bg-rose-50/60 border border-rose-100 rounded-lg">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 block mb-1">
-                        Upcoming Deadline:
-                      </span>
-                      <div className="flex items-center justify-between text-slate-700 font-medium">
-                        <span className="truncate">{group.upcomingDeadlines[0].title}</span>
-                        <span className="text-[10px] font-bold text-rose-600 ml-2 shrink-0">
-                          {new Date(group.upcomingDeadlines[0].dueDate).toLocaleDateString()}
-                        </span>
+                  {group.activeProject && (
+                    <div className="space-y-1.5 mb-4">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        <span>Project Progress</span>
+                        <span>{group.progress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
+                          style={{ width: `${group.progress}%` }}
+                        />
                       </div>
                     </div>
                   )}
 
-                  {/* Latest Review / Evaluation */}
-                  <div className="pt-2 border-t border-slate-100 text-xs">
-                    <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">
-                      Latest Evaluation:
-                    </span>
-                    {group.latestEvaluation ? (
-                      <div className="flex items-center justify-between font-medium">
-                        <span className="text-slate-700">{group.latestEvaluation.reviewStage}</span>
-                        <span className="font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                          {group.latestEvaluation.totalMarksObtained} pts ({group.latestEvaluation.grade})
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-slate-400 italic">No evaluation conducted yet</span>
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {group.pendingReviewsCount > 0 && (
+                      <span className="px-2 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[10px] font-bold flex items-center">
+                        📄 {group.pendingReviewsCount} Review Pending
+                      </span>
+                    )}
+                    {group.overdueTasksCount > 0 && (
+                      <span className="px-2 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[10px] font-bold flex items-center">
+                        ⚠️ {group.overdueTasksCount} Overdue
+                      </span>
                     )}
                   </div>
                 </div>
@@ -182,9 +144,9 @@ export const FacultyDashboardPage = () => {
                     onClick={() => {
                       navigate(`/faculty/group/${group._id}`);
                     }}
-                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors shadow-xs"
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors"
                   >
-                    <span>Open Group Workspace</span>
+                    <span>Open Workspace</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>

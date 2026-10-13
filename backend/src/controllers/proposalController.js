@@ -16,16 +16,25 @@ export const getMyProposal = async (req, res, next) => {
   try {
     const user = req.user;
 
-    const membership = await GroupMember.findOne({
+    const memberships = await GroupMember.find({
       userId: user._id,
       status: 'ACCEPTED',
     }).populate('groupId');
 
-    if (!membership || !membership.groupId) {
+    const validMemberships = memberships.filter((m) => m.groupId);
+
+    if (validMemberships.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'You must belong to a project group before drafting a proposal.',
       });
+    }
+
+    const requestedGroupId = req.query.groupId;
+    let membership = validMemberships[0];
+    if (requestedGroupId) {
+      const match = validMemberships.find((m) => String(m.groupId._id) === String(requestedGroupId));
+      if (match) membership = match;
     }
 
     const group = membership.groupId;
@@ -61,18 +70,28 @@ export const getMyProposal = async (req, res, next) => {
       .populate('facultyId', 'name email role')
       .sort({ createdAt: -1 });
 
-    // Fetch members
+    // Fetch members of this specific group
     const memberDocs = await GroupMember.find({
       groupId: group._id,
       status: 'ACCEPTED',
     }).populate('userId', 'name email enrollmentNumber');
 
+    // Groups list for switching between student's groups
+    const groupsList = validMemberships.map((m) => ({
+      _id: m.groupId._id,
+      id: m.groupId._id,
+      name: m.groupId.name,
+      code: m.groupId.code,
+      userRole: m.role,
+    }));
+
     res.status(200).json({
       success: true,
       project, // For backwards compatibility
-      projects, // Array of up to 3 proposals
+      projects, // Array of up to 3 proposals for this group
       group,
-      members: memberDocs,
+      groups: groupsList, // All groups student belongs to
+      members: memberDocs, // Members of this specific group
       userRoleInGroup: membership.role,
       feedbackHistory,
     });
@@ -90,25 +109,27 @@ export const saveProposalDraft = async (req, res, next) => {
     const user = req.user;
     const { title, description, domain, techStack, problemStatement, objectives, scope, expectedOutcome, innovation, githubRepositoryUrl } = req.body;
 
-    const membership = await GroupMember.findOne({
+    const memberships = await GroupMember.find({
       userId: user._id,
       status: 'ACCEPTED',
     });
 
-    if (!membership) {
+    if (!memberships || memberships.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'You do not belong to an active group.',
       });
     }
 
+    const groupIds = memberships.map((m) => m.groupId);
+
     // Get specific project or the first active one
     const projectId = req.query.projectId || req.body.projectId;
     let project;
     if (projectId) {
-      project = await Project.findOne({ _id: projectId, groupId: membership.groupId });
+      project = await Project.findOne({ _id: projectId, groupId: { $in: groupIds } });
     } else {
-      project = await Project.findOne({ groupId: membership.groupId, isArchived: false });
+      project = await Project.findOne({ groupId: { $in: groupIds }, isArchived: false });
     }
 
     if (!project) {
@@ -181,12 +202,23 @@ export const saveProposalDraft = async (req, res, next) => {
 export const createNewProposal = async (req, res, next) => {
   try {
     const user = req.user;
-    const membership = await GroupMember.findOne({
-      userId: user._id,
-      status: 'ACCEPTED',
-    }).populate('groupId');
+    const requestedGroupId = req.body.groupId || req.query.groupId;
 
-    if (!membership) {
+    let membership;
+    if (requestedGroupId) {
+      membership = await GroupMember.findOne({
+        userId: user._id,
+        groupId: requestedGroupId,
+        status: 'ACCEPTED',
+      }).populate('groupId');
+    } else {
+      membership = await GroupMember.findOne({
+        userId: user._id,
+        status: 'ACCEPTED',
+      }).populate('groupId');
+    }
+
+    if (!membership || !membership.groupId) {
       return res.status(400).json({ success: false, message: 'You must belong to a group.' });
     }
 
@@ -196,13 +228,7 @@ export const createNewProposal = async (req, res, next) => {
 
     const group = membership.groupId;
     
-    // Check if there is an APPROVED project already
-    const approvedProject = await Project.findOne({ groupId: group._id, status: 'APPROVED' });
-    if (approvedProject) {
-      return res.status(400).json({ success: false, message: 'You already have an approved project.' });
-    }
-
-    // Count non-archived projects
+    // Count non-archived projects (max 3 active proposals per group)
     const activeProjectsCount = await Project.countDocuments({ groupId: group._id, isArchived: false, status: { $ne: 'REJECTED' } });
     if (activeProjectsCount >= 3) {
       return res.status(400).json({ success: false, message: 'You have reached the maximum limit of 3 active proposals.' });
@@ -241,22 +267,36 @@ export const createNewProposal = async (req, res, next) => {
 export const getAiRecommendations = async (req, res, next) => {
   try {
     const user = req.user;
-    const { domain } = req.body;
+    const { domain, projectId, groupId } = req.body;
 
-    const membership = await GroupMember.findOne({
+    const memberships = await GroupMember.find({
       userId: user._id,
       status: 'ACCEPTED',
     });
 
-    if (!membership) {
+    if (!memberships || memberships.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'You must belong to a group to request AI recommendations.',
       });
     }
 
+    let targetGroupId = groupId;
+    if (!targetGroupId && projectId) {
+      const p = await Project.findById(projectId);
+      if (p) targetGroupId = p.groupId;
+    }
+    if (!targetGroupId) {
+      targetGroupId = memberships[0].groupId;
+    }
+
+    const isMember = memberships.some((m) => String(m.groupId) === String(targetGroupId));
+    if (!isMember) {
+      return res.status(403).json({ success: false, message: 'Access denied to this project group.' });
+    }
+
     // Fetch skills & interests of all accepted group members
-    const groupMembers = await GroupMember.find({ groupId: membership.groupId, status: 'ACCEPTED' });
+    const groupMembers = await GroupMember.find({ groupId: targetGroupId, status: 'ACCEPTED' });
     const memberUserIds = groupMembers.map((m) => m.userId);
 
     const profiles = await StudentProfile.find({ userId: { $in: memberUserIds } });
@@ -286,16 +326,25 @@ export const runSimilarityCheck = async (req, res, next) => {
   try {
     const user = req.user;
 
-    const membership = await GroupMember.findOne({
+    const memberships = await GroupMember.find({
       userId: user._id,
       status: 'ACCEPTED',
     });
 
-    if (!membership) {
+    if (!memberships || memberships.length === 0) {
       return res.status(400).json({ success: false, message: 'You must belong to a group.' });
     }
 
-    const project = await Project.findOne({ groupId: membership.groupId });
+    const groupIds = memberships.map((m) => m.groupId);
+
+    const projectId = req.query.projectId || req.body.projectId;
+    let project;
+    if (projectId) {
+      project = await Project.findOne({ _id: projectId, groupId: { $in: groupIds } });
+    } else {
+      project = await Project.findOne({ groupId: { $in: groupIds }, isArchived: false });
+    }
+
     if (!project) {
       return res.status(404).json({ success: false, message: 'Draft project not found.' });
     }
@@ -334,32 +383,35 @@ export const submitProposal = async (req, res, next) => {
   try {
     const user = req.user;
 
-    const membership = await GroupMember.findOne({
+    const memberships = await GroupMember.find({
       userId: user._id,
       status: 'ACCEPTED',
     });
 
-    if (!membership) {
+    if (!memberships || memberships.length === 0) {
       return res.status(400).json({ success: false, message: 'You must belong to a group.' });
     }
 
-    if (membership.role !== 'LEADER') {
-      return res.status(403).json({
-        success: false,
-        message: 'Only the group leader can submit the final proposal.',
-      });
-    }
+    const groupIds = memberships.map((m) => m.groupId);
 
     const projectId = req.query.projectId || req.body.projectId;
     let project;
     if (projectId) {
-      project = await Project.findOne({ _id: projectId, groupId: membership.groupId });
+      project = await Project.findOne({ _id: projectId, groupId: { $in: groupIds } });
     } else {
-      project = await Project.findOne({ groupId: membership.groupId, isArchived: false });
+      project = await Project.findOne({ groupId: { $in: groupIds }, isArchived: false });
     }
 
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project draft not found.' });
+    }
+
+    const projectMembership = memberships.find((m) => String(m.groupId) === String(project.groupId));
+    if (!projectMembership || projectMembership.role !== 'LEADER') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the group leader can submit the final proposal.',
+      });
     }
 
     // Validation checks
@@ -472,11 +524,6 @@ export const reviewProposal = async (req, res, next) => {
     let newStatus = 'UNDER_REVIEW';
     if (action === 'APPROVE') {
       newStatus = 'APPROVED';
-      // Archive other projects for this group
-      await Project.updateMany(
-        { groupId: project.groupId, _id: { $ne: project._id } },
-        { $set: { isArchived: true, status: 'REJECTED' } }
-      );
     }
     if (action === 'REQUEST_REVISION') newStatus = 'REVISION_REQUIRED';
     if (action === 'REJECT') {
@@ -572,14 +619,11 @@ export const getAssignedProposals = async (req, res, next) => {
     const query = {};
 
     if (user.role === 'FACULTY') {
-      const assignedGroups = await ProjectGroup.find({
-        $or: [{ guideId: user._id }, { coGuideId: user._id }],
-      }).select('_id');
-      const assignedGroupIds = assignedGroups.map((g) => g._id);
-
+      // Allow faculty to see proposals assigned to them, OR unassigned proposals (so they can review/adopt them)
       query.$or = [
         { facultyGuideId: user._id },
-        { groupId: { $in: assignedGroupIds } },
+        { facultyGuideId: null, status: 'SUBMITTED' },
+        { facultyGuideId: null, status: 'RESUBMITTED' }
       ];
     }
 
@@ -732,20 +776,22 @@ export const requestEdit = async (req, res, next) => {
     const user = req.user;
     const { reason, fields, projectId } = req.body;
 
-    const membership = await GroupMember.findOne({
+    const memberships = await GroupMember.find({
       userId: user._id,
       status: 'ACCEPTED',
     });
 
-    if (!membership) {
+    if (!memberships || memberships.length === 0) {
       return res.status(400).json({ success: false, message: 'You must belong to a group.' });
     }
 
+    const groupIds = memberships.map((m) => m.groupId);
+
     let project;
     if (projectId) {
-      project = await Project.findOne({ _id: projectId, groupId: membership.groupId });
+      project = await Project.findOne({ _id: projectId, groupId: { $in: groupIds } });
     } else {
-      project = await Project.findOne({ groupId: membership.groupId, status: 'APPROVED' });
+      project = await Project.findOne({ groupId: { $in: groupIds }, status: 'APPROVED' });
     }
 
     if (!project) {
@@ -792,7 +838,75 @@ export const requestEdit = async (req, res, next) => {
 };
 
 /**
- * @desc Delete a project proposal (Admin/Coordinator)
+ * @desc Withdraw a submitted proposal back to draft for editing
+ * @route POST /api/proposals/withdraw
+ */
+export const withdrawProposal = async (req, res, next) => {
+  try {
+    const user = req.user;
+    const { projectId } = req.body;
+
+    const memberships = await GroupMember.find({
+      userId: user._id,
+      status: 'ACCEPTED',
+    });
+
+    if (!memberships || memberships.length === 0) {
+      return res.status(400).json({ success: false, message: 'You must belong to a group.' });
+    }
+
+    const groupIds = memberships.map((m) => m.groupId);
+
+    let project;
+    if (projectId) {
+      project = await Project.findOne({ _id: projectId, groupId: { $in: groupIds } });
+    } else {
+      project = await Project.findOne({ groupId: { $in: groupIds }, status: { $in: ['SUBMITTED', 'RESUBMITTED'] } });
+    }
+
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'Proposal not found.' });
+    }
+
+    const projectMembership = memberships.find((m) => String(m.groupId) === String(project.groupId));
+    if (!projectMembership || projectMembership.role !== 'LEADER') {
+      return res.status(403).json({ success: false, message: 'Only the group leader can withdraw a proposal.' });
+    }
+
+    if (!['SUBMITTED', 'RESUBMITTED'].includes(project.status)) {
+      return res.status(400).json({ success: false, message: `Only submitted proposals can be withdrawn (current status: ${project.status}).` });
+    }
+
+    project.status = 'DRAFT';
+    project.statusHistory.push({
+      status: 'DRAFT',
+      changedBy: user._id,
+      timestamp: new Date(),
+      feedback: 'Proposal withdrawn back to draft by group leader.',
+    });
+
+    await project.save();
+
+    await logAuditEvent({
+      actor: user,
+      action: 'PROPOSAL_WITHDRAWN',
+      targetEntity: 'Project',
+      targetId: project._id,
+      req,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Proposal withdrawn to draft. You can now edit and resubmit.',
+      project,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc Delete a project proposal (Leader for DRAFT, Admin/Coordinator for any)
  * @route DELETE /api/proposals/:id
  */
 export const deleteProposal = async (req, res, next) => {
@@ -804,6 +918,20 @@ export const deleteProposal = async (req, res, next) => {
       return res.status(404).json({ success: false, detail: 'Proposal not found' });
     }
 
+    if (req.user.role === 'STUDENT') {
+      const membership = await GroupMember.findOne({
+        userId: req.user._id,
+        groupId: project.groupId,
+        status: 'ACCEPTED',
+      });
+      if (!membership || membership.role !== 'LEADER') {
+        return res.status(403).json({ success: false, message: 'Only group leaders can delete group proposals.' });
+      }
+      if (project.status !== 'DRAFT') {
+        return res.status(400).json({ success: false, message: 'Only draft proposals can be deleted.' });
+      }
+    }
+
     await Project.findByIdAndDelete(proposalId);
 
     res.status(200).json({ success: true, message: 'Project proposal deleted successfully' });
@@ -811,3 +939,4 @@ export const deleteProposal = async (req, res, next) => {
     next(error);
   }
 };
+

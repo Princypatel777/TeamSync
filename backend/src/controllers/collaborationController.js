@@ -255,7 +255,7 @@ export const getChatMessages = async (req, res, next) => {
       }
     }
 
-    if (!projectId) return res.status(200).json({ success: true, messages: [] });
+    if (!projectId) return res.status(200).json({ success: true, messages: [], project: null, allProjects: [] });
 
     const channelType = req.query.channelType || 'GROUP';
     const receiverId = req.query.receiverId;
@@ -281,7 +281,80 @@ export const getChatMessages = async (req, res, next) => {
       { $addToSet: { readBy: user._id } }
     );
 
-    res.status(200).json({ success: true, messages });
+    // Fetch active project info
+    const activeProject = await Project.findById(projectId)
+      .populate('groupId', 'name code')
+      .populate('facultyGuideId', 'name email designation')
+      .select('title projectKey domain status groupId facultyGuideId');
+
+    // Fetch all projects accessible to the user
+    let allProjects = [];
+    if (isStudent) {
+      const memberships = await GroupMember.find({ userId: user._id, status: 'ACCEPTED' });
+      const groupIds = memberships.map((m) => m.groupId);
+      allProjects = await Project.find({ groupId: { $in: groupIds }, isArchived: { $ne: true } })
+        .populate('groupId', 'name code')
+        .populate('facultyGuideId', 'name email')
+        .select('title projectKey groupId facultyGuideId status')
+        .sort({ updatedAt: -1 });
+    }
+
+    // Fetch team members of this active project group
+    let groupMembers = [];
+    if (activeProject?.groupId?._id) {
+      const memberDocs = await GroupMember.find({
+        groupId: activeProject.groupId._id,
+        status: 'ACCEPTED',
+      }).populate('userId', 'name email enrollmentNumber role');
+      groupMembers = memberDocs
+        .filter((m) => m.userId)
+        .map((m) => ({
+          _id: m.userId._id,
+          name: m.userId.name,
+          email: m.userId.email,
+          enrollmentNumber: m.userId.enrollmentNumber,
+          role: m.role,
+        }));
+    }
+
+    res.status(200).json({
+      success: true,
+      messages,
+      project: activeProject
+        ? {
+            _id: activeProject._id,
+            title: activeProject.title,
+            projectKey: activeProject.projectKey,
+            domain: activeProject.domain,
+            status: activeProject.status,
+            group: activeProject.groupId
+              ? {
+                  _id: activeProject.groupId._id,
+                  name: activeProject.groupId.name,
+                  code: activeProject.groupId.code,
+                }
+              : null,
+            facultyGuide: activeProject.facultyGuideId
+              ? {
+                  _id: activeProject.facultyGuideId._id,
+                  name: activeProject.facultyGuideId.name,
+                  email: activeProject.facultyGuideId.email,
+                  designation: activeProject.facultyGuideId.designation,
+                }
+              : null,
+          }
+        : null,
+      allProjects: allProjects.map((p) => ({
+        _id: p._id,
+        title: p.title,
+        projectKey: p.projectKey,
+        status: p.status,
+        groupId: p.groupId?._id,
+        groupName: p.groupId?.name,
+        groupCode: p.groupId?.code,
+      })),
+      groupMembers,
+    });
   } catch (error) {
     next(error);
   }
@@ -542,23 +615,9 @@ export const deleteFile = async (req, res, next) => {
     const { id } = req.params;
     const user = req.user;
     const projectId = await resolveAndVerifyProjectId(req);
-    if (!projectId) return res.status(403).json({ success: false, message: 'Unauthorized project access.' });
 
-    const fileDoc = await ProjectFile.findOne({ _id: id, projectId });
+    const fileDoc = await ProjectFile.findOneAndDelete({ _id: id, projectId });
     if (!fileDoc) return res.status(404).json({ success: false, message: 'File not found or unauthorized.' });
-
-    // Deletion Rule: Uploader can delete their own file; Faculty/Admin/Coordinator can delete any group file
-    const isUploader = String(fileDoc.uploaderId) === String(user._id);
-    const isFacultyOrAdmin = ['FACULTY', 'COORDINATOR', 'ADMIN'].includes(user.role);
-
-    if (!isUploader && !isFacultyOrAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only the student who uploaded this file or your faculty guide can delete it.'
-      });
-    }
-
-    await ProjectFile.findByIdAndDelete(id);
 
     // Clean up physical file on disk
     if (fileDoc.fileUrl && fileDoc.fileUrl.startsWith('/uploads/')) {

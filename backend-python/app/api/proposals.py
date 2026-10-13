@@ -39,12 +39,28 @@ def _generate_project_key(title: str, fallback: str = "PROJ") -> str:
     return key or fallback
 
 
-async def _get_student_membership(user_id: PydanticObjectId) -> Optional[GroupMember]:
-    """Return the accepted GroupMember record for a student, or None."""
-    return await GroupMember.find_one(
+async def _get_student_membership(
+    user_id: PydanticObjectId, group_id: Optional[str | PydanticObjectId] = None
+) -> Optional[GroupMember]:
+    """Return the accepted GroupMember record for a student, matching group_id if provided."""
+    query = [
         GroupMember.user_id == user_id,
         GroupMember.status == "ACCEPTED",
-    )
+    ]
+    if group_id:
+        try:
+            query.append(GroupMember.group_id == PydanticObjectId(str(group_id)))
+        except Exception:
+            pass
+    return await GroupMember.find_one(*query)
+
+
+async def _get_student_memberships(user_id: PydanticObjectId) -> List[GroupMember]:
+    """Return all accepted GroupMember records for a student."""
+    return await GroupMember.find(
+        GroupMember.user_id == user_id,
+        GroupMember.status == "ACCEPTED",
+    ).to_list()
 
 
 # ---------------------------------------------------------------------------
@@ -111,18 +127,25 @@ class RequestEditBody(CamelModel):
     summary="Get current student's group project proposal draft",
 )
 async def get_my_proposal(
+    group_id: Optional[str] = Query(None, alias="groupId"),
     current_user: User = Depends(require_roles("STUDENT", "ADMIN")),
 ):
     """
     Return the group's proposal draft(s) and feedback history.
     Auto-creates an initial DRAFT project if none exists yet.
     """
-    membership = await _get_student_membership(current_user.id)
-    if not membership:
+    memberships = await _get_student_memberships(current_user.id)
+    if not memberships:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You must belong to a project group before drafting a proposal.",
         )
+
+    membership = memberships[0]
+    if group_id:
+        match = next((m for m in memberships if str(m.group_id) == str(group_id)), None)
+        if match:
+            membership = match
 
     group = await ProjectGroup.get(membership.group_id)
     if not group:
@@ -181,11 +204,24 @@ async def get_my_proposal(
             }
         member_list.append(m_dict)
 
+    groups_list = []
+    for m in memberships:
+        g = await ProjectGroup.get(m.group_id)
+        if g:
+            groups_list.append({
+                "_id": str(g.id),
+                "id": str(g.id),
+                "name": g.name,
+                "code": g.code,
+                "userRole": m.role,
+            })
+
     return {
         "success": True,
         "project": project.model_dump(mode='json', by_alias=True),
         "projects": [p.model_dump(mode='json', by_alias=True) for p in projects],
         "group": group.model_dump(mode='json', by_alias=True),
+        "groups": groups_list,
         "members": member_list,
         "userRoleInGroup": membership.role,
         "feedbackHistory": [f.model_dump(mode='json', by_alias=True) for f in feedback_history],
@@ -323,15 +359,6 @@ async def create_new_proposal(
     group = await ProjectGroup.get(membership.group_id)
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
-
-    approved = await Project.find_one(
-        Project.group_id == group.id, Project.status == "APPROVED"
-    )
-    if approved:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already have an approved project.",
-        )
 
     active_count = await Project.find(
         Project.group_id == group.id,
@@ -718,15 +745,6 @@ async def review_proposal(
     new_status = "UNDER_REVIEW"
     if body.action == "APPROVE":
         new_status = "APPROVED"
-        # Archive other proposals for this group
-        others = await Project.find(
-            Project.group_id == project.group_id,
-            Project.id != project.id,
-        ).to_list()
-        for other in others:
-            other.is_archived = True
-            other.status = "REJECTED"
-            await other.save()
 
     elif body.action == "REQUEST_REVISION":
         new_status = "REVISION_REQUIRED"

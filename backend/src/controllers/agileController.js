@@ -3,8 +3,6 @@ import Feature from '../models/Feature.js';
 import Sprint from '../models/Sprint.js';
 import Task from '../models/Task.js';
 import Bug from '../models/Bug.js';
-import Epic from '../models/Epic.js';
-import UserStory from '../models/UserStory.js';
 import Project from '../models/Project.js';
 import GroupMember from '../models/GroupMember.js';
 import { logAuditEvent } from '../utils/auditLogger.js';
@@ -340,7 +338,7 @@ export const getTasks = async (req, res, next) => {
     const query = { projectId };
 
     if (sprintId) query.sprintId = sprintId;
-    if (status) query.status = status === 'TODO' ? 'TO_DO' : status;
+    if (status) query.status = status;
 
     const tasks = await Task.find(query)
       .populate('assigneeId', 'name enrollmentNumber email')
@@ -454,8 +452,7 @@ export const updateTask = async (req, res, next) => {
 export const updateTaskStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
-    let { status } = req.body;
-    if (status === 'TODO') status = 'TO_DO';
+    const { status } = req.body;
 
     if (!['TO_DO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'].includes(status)) {
       return res.status(400).json({ success: false, message: 'Invalid status.' });
@@ -682,84 +679,3 @@ export const getTraceabilityChain = async (req, res, next) => {
     next(error);
   }
 };
-
-// ================= EPICS & USER STORIES =================
-export const getEpics = async (req, res, next) => {
-  try {
-    const projectId = await resolveAndVerifyProjectId(req);
-    if (!projectId) return res.status(200).json({ success: true, epics: [] });
-
-    const epics = await Epic.find({ projectId }).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, epics });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const createEpic = async (req, res, next) => {
-  try {
-    const projectId = await resolveAndVerifyProjectId(req);
-    if (!projectId) return res.status(400).json({ success: false, message: 'Active project required.' });
-
-    const count = await Epic.countDocuments({ projectId });
-    const code = `EPIC-${String(count + 1).padStart(3, '0')}`;
-    const { title, description, color, requirementId } = req.body;
-
-    const epic = await Epic.create({
-      projectId,
-      code,
-      title: title || 'Epic',
-      description: description || '',
-      color: color || '#3b82f6',
-      requirementId: requirementId || null,
-    });
-
-    res.status(201).json({ success: true, epic });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const getStories = async (req, res, next) => {
-  try {
-    const projectId = await resolveAndVerifyProjectId(req);
-    if (!projectId) return res.status(200).json({ success: true, userStories: [] });
-
-    const { epicId } = req.query;
-    const query = { projectId };
-    if (epicId) query.epicId = epicId;
-
-    const userStories = await UserStory.find(query).populate('epicId', 'title code color').sort({ createdAt: -1 });
-    res.status(200).json({ success: true, userStories });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const createStory = async (req, res, next) => {
-  try {
-    const projectId = await resolveAndVerifyProjectId(req);
-    if (!projectId) return res.status(400).json({ success: false, message: 'Active project required.' });
-
-    const count = await UserStory.countDocuments({ projectId });
-    const code = `US-${String(count + 1).padStart(3, '0')}`;
-    const { title, persona, action, benefit, epicId, storyPoints, priority } = req.body;
-
-    const userStory = await UserStory.create({
-      projectId,
-      code,
-      title: title || `${persona || 'As a user'} ${action || 'I want'}`,
-      persona: persona || 'As a student',
-      action: action || title || 'I want to complete task',
-      benefit: benefit || 'So that the project progresses',
-      epicId: epicId || null,
-      storyPoints: storyPoints || 3,
-      priority: priority || 'MEDIUM',
-    });
-
-    res.status(201).json({ success: true, userStory });
-  } catch (error) {
-    next(error);
-  }
-};
-

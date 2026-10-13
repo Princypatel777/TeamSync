@@ -212,10 +212,7 @@ async function runVerification() {
     groupId = gRes.data.group._id;
 
     // Create student 2
-    const student2Enrollment = `24AIDS${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 89 + 10)}`;
-    const existingS2 = await User.findOne({ enrollmentNumber: student2Enrollment });
-    if (existingS2) await User.deleteOne({ _id: existingS2._id });
-
+    const student2Enrollment = `24AIDS${Math.floor(Math.random() * 899 + 100)}`;
     await api('/admin/users', 'POST', { name: 'Priya Verma', role: 'STUDENT', enrollmentNumber: student2Enrollment, password: 'Password@123' }, adminToken);
     const s2Login = await api('/auth/login', 'POST', { loginId: student2Enrollment, password: 'Password@123' });
     student2Token = s2Login.data.token;
@@ -395,10 +392,7 @@ async function runVerification() {
     fileId = fileRes.data.file._id;
 
     // Verify Download Security (403 for unrelated student)
-    const unrelatedEnrollment = `24UNR${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 89 + 10)}`;
-    const existingUnrelated = await User.findOne({ enrollmentNumber: unrelatedEnrollment });
-    if (existingUnrelated) await User.deleteOne({ _id: existingUnrelated._id });
-
+    const unrelatedEnrollment = `24AIDS${Math.floor(Math.random() * 899 + 100)}`;
     await api('/admin/users', 'POST', { name: 'Unrelated Student', role: 'STUDENT', enrollmentNumber: unrelatedEnrollment, password: 'Password@123' }, adminToken);
     const unrelatedToken = (await api('/auth/login', 'POST', { loginId: unrelatedEnrollment, password: 'Password@123' })).data.token;
 

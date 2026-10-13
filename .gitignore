@@ -1,35 +1,13 @@
-# Dependencies
 node_modules/
-venv/
-.venv/
-env/
-
-# Environment files
 .env
-.env*.local
-!.env.example
-
-# Production builds
 dist/
 build/
-out/
+.DS_Store
+*.log
 
-# Python cache & artifacts
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.pytest_cache/
+*.pyc
+venv/
 
-# Uploads and temporary files
-uploads/*
-!uploads/.gitkeep
 backend/uploads/*
 !backend/uploads/.gitkeep
-
-# System & IDE files
-.DS_Store
-Thumbs.db
-*.log
-.vscode/
-.idea/

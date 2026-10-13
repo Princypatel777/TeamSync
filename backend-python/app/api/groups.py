@@ -109,16 +109,7 @@ async def create_group(
     Create a new project group.
     The calling student is automatically made the group leader.
     """
-    # Check if student is already in an active group
-    existing_membership = await GroupMember.find_one(
-        GroupMember.user_id == current_user.id,
-        GroupMember.status == "ACCEPTED",
-    )
-    if existing_membership:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already belong to an active project group.",
-        )
+
 
     group_code = _generate_group_code()
 
@@ -195,16 +186,7 @@ async def join_group_by_code(
 
     trimmed_code = body.code.strip().upper()
 
-    # Check if student is already in an active group
-    existing_membership = await GroupMember.find_one(
-        GroupMember.user_id == current_user.id,
-        GroupMember.status == "ACCEPTED",
-    )
-    if existing_membership:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already belong to an active project group.",
-        )
+
 
     group = await ProjectGroup.find_one(ProjectGroup.code == trimmed_code)
     if not group:
@@ -510,16 +492,7 @@ async def invite_member(
             detail="You cannot invite yourself to your own group.",
         )
 
-    # Check if candidate is already in an accepted group
-    candidate_active = await GroupMember.find_one(
-        GroupMember.user_id == candidate.id,
-        GroupMember.status == "ACCEPTED",
-    )
-    if candidate_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Student '{candidate.name}' ({getattr(candidate, 'enrollment_number', '')}) already belongs to a group.",
-        )
+
 
     # Check existing invite
     existing_invite = await GroupMember.find_one(
@@ -612,15 +585,7 @@ async def respond_invite(
         )
 
     if body.action == "ACCEPT":
-        existing_accepted = await GroupMember.find_one(
-            GroupMember.user_id == current_user.id,
-            GroupMember.status == "ACCEPTED",
-        )
-        if existing_accepted:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You already belong to another active group.",
-            )
+
 
         # Check if group has reached max members limit set by Admin
         current_members_count = await GroupMember.find(
@@ -637,14 +602,7 @@ async def respond_invite(
         invite.status = "ACCEPTED"
         await invite.save()
 
-        # Reject all other pending invitations for this student
-        others = await GroupMember.find(
-            GroupMember.user_id == current_user.id,
-            GroupMember.status == "INVITED",
-        ).to_list()
-        for other in others:
-            other.status = "REJECTED"
-            await other.save()
+
 
         leader_member = await GroupMember.find_one(
             GroupMember.group_id == invite.group_id,
@@ -927,3 +885,93 @@ async def delete_group(group_id: str, current_user: User = Depends(get_current_u
     await group.delete()
 
     return {"success": True, "message": "Group deleted successfully"}
+
+
+@router.delete(
+    "/invites/{invite_id}",
+    summary="Cancel a pending group invitation",
+)
+async def cancel_invite(
+    invite_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        oid = PydanticObjectId(invite_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid invitation ID format.")
+
+    invite = await GroupMember.get(oid)
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+
+    if invite.status != "INVITED":
+        raise HTTPException(status_code=400, detail="This invitation is not pending.")
+
+    if current_user.role != "ADMIN":
+        caller_membership = await GroupMember.find_one(
+            GroupMember.group_id == invite.group_id,
+            GroupMember.user_id == current_user.id,
+            GroupMember.status == "ACCEPTED",
+        )
+        if not caller_membership or caller_membership.role != "LEADER":
+            raise HTTPException(status_code=403, detail="Only the group leader can cancel sent invitations.")
+
+    await invite.delete()
+    return {"success": True, "message": "Invitation cancelled successfully."}
+
+
+@router.delete(
+    "/{group_id}/members/{member_id}",
+    summary="Remove a member from the group",
+)
+async def remove_member(
+    group_id: str,
+    member_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        g_oid = PydanticObjectId(group_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid group ID format.")
+
+    group = await ProjectGroup.get(g_oid)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found.")
+
+    if group.status != "FORMING" and current_user.role != "ADMIN":
+        raise HTTPException(status_code=400, detail="Members can only be removed while the group is in FORMING status.")
+
+    if current_user.role != "ADMIN":
+        caller_membership = await GroupMember.find_one(
+            GroupMember.group_id == g_oid,
+            GroupMember.user_id == current_user.id,
+            GroupMember.status == "ACCEPTED",
+        )
+        if not caller_membership or caller_membership.role != "LEADER":
+            raise HTTPException(status_code=403, detail="Only the group leader can remove members.")
+
+    if str(current_user.id) == member_id:
+        raise HTTPException(status_code=400, detail="Group leader cannot be removed. Transfer leadership or leave group instead.")
+
+    target = None
+    try:
+        m_oid = PydanticObjectId(member_id)
+        target = await GroupMember.find_one(
+            GroupMember.group_id == g_oid,
+            GroupMember.user_id == m_oid,
+            GroupMember.status == "ACCEPTED",
+        )
+        if not target:
+            target = await GroupMember.find_one(
+                GroupMember.id == m_oid,
+                GroupMember.group_id == g_oid,
+                GroupMember.status == "ACCEPTED",
+            )
+    except Exception:
+        pass
+
+    if not target:
+        raise HTTPException(status_code=404, detail="Member not found in this group.")
+
+    await target.delete()
+    return {"success": True, "message": "Member removed from group successfully."}

@@ -18,22 +18,7 @@ const projectFileSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: [
-        'SRS Documents',
-        'Design Documents',
-        'Presentations',
-        'Progress Reports',
-        'Research Papers',
-        'Technical Documents',
-        'Final Reports',
-        'REPORT',
-        'DOCUMENT',
-        'PRESENTATION',
-        'CODE',
-        'SRS',
-        'DESIGN',
-        'OTHER'
-      ],
+      enum: ['SRS Documents', 'Design Documents', 'Presentations', 'Progress Reports', 'Research Papers', 'Technical Documents', 'Final Reports', 'OTHER'],
       default: 'OTHER',
     },
     description: {

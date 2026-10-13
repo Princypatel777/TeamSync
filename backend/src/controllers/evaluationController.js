@@ -171,19 +171,6 @@ export const submitStudentMarks = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Student ID and criteria scores are required.' });
     }
 
-    if (evaluator.role === 'FACULTY') {
-      const project = await Project.findById(projectId);
-      if (!project) return res.status(404).json({ success: false, message: 'Project not found.' });
-      const group = await ProjectGroup.findOne({
-        _id: project.groupId,
-        $or: [{ guideId: evaluator._id }, { coGuideId: evaluator._id }],
-      });
-      const isLegacyGuide = String(project.facultyGuideId) === String(evaluator._id);
-      if (!group && !isLegacyGuide) {
-        return res.status(403).json({ success: false, message: 'You can only evaluate students in your assigned groups.' });
-      }
-    }
-
     // Calculate total weighted marks
     let totalWeightedScore = 0;
     const formattedScores = criteriaScores.map((cs) => {
@@ -232,14 +219,10 @@ export const getStudentMarks = async (req, res, next) => {
       query.projectId = projectId;
       query.studentId = user._id;
     } else if (user.role === 'FACULTY') {
-      const userGroups = await ProjectGroup.find({
-        $or: [{ guideId: user._id }, { coGuideId: user._id }],
-      }).select('_id');
-      const groupIds = userGroups.map((g) => g._id);
-      const projects = await Project.find({
-        $or: [{ groupId: { $in: groupIds } }, { facultyGuideId: user._id }],
-      }).select('_id');
-      const projectIds = projects.map((p) => p._id);
+      const userGroups = await ProjectGroup.find({ facultyId: user._id }).select('_id');
+      const groupIds = userGroups.map(g => g._id);
+      const projects = await Project.find({ groupId: { $in: groupIds } }).select('_id');
+      const projectIds = projects.map(p => p._id);
       query.projectId = { $in: projectIds };
     } else if (req.query.projectId) {
       query.projectId = req.query.projectId;

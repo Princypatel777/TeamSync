@@ -129,11 +129,28 @@ export const getFacultySupervisionSummary = async (req, res, next) => {
 export const getTeammatesForEval = async (req, res, next) => {
   try {
     const user = req.user;
-    const membership = await GroupMember.findOne({ userId: user._id, status: 'ACCEPTED' });
-    if (!membership) return res.status(200).json({ success: true, teammates: [] });
+    const requestedGroupId = req.query.groupId;
+    const requestedProjectId = req.query.projectId;
+
+    const memberships = await GroupMember.find({ userId: user._id, status: 'ACCEPTED' });
+    if (!memberships || memberships.length === 0) return res.status(200).json({ success: true, teammates: [] });
+
+    let targetGroupId;
+    if (requestedGroupId) {
+      const match = memberships.find((m) => String(m.groupId) === String(requestedGroupId));
+      if (match) targetGroupId = match.groupId;
+    } else if (requestedProjectId) {
+      const proj = await Project.findById(requestedProjectId);
+      if (proj && memberships.some((m) => String(m.groupId) === String(proj.groupId))) {
+        targetGroupId = proj.groupId;
+      }
+    }
+    if (!targetGroupId) {
+      targetGroupId = memberships[0].groupId;
+    }
 
     const allMembers = await GroupMember.find({
-      groupId: membership.groupId,
+      groupId: targetGroupId,
       status: 'ACCEPTED',
     }).populate('userId', 'name enrollmentNumber email role');
 
@@ -150,7 +167,7 @@ export const getTeammatesForEval = async (req, res, next) => {
 export const submitPeerEvaluation = async (req, res, next) => {
   try {
     const evaluator = req.user;
-    const projectId = await getStudentProjectId(evaluator);
+    const projectId = await resolveAndVerifyProjectId(req);
     if (!projectId) return res.status(400).json({ success: false, message: 'Active project required.' });
 
     const { evaluateeId, contributionScore, teamworkScore, technicalScore, communicationScore, comments } = req.body;

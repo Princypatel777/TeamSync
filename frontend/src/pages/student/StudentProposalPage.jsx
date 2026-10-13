@@ -31,6 +31,7 @@ export const StudentProposalPage = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('DRAFT'); // DRAFT | AI | SIMILARITY
   const [activeProjectId, setActiveProjectId] = useState(null);
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
 
   const [isChangeModalOpen, setIsChangeModalOpen] = useState(false);
   const [changeReason, setChangeReason] = useState('');
@@ -52,15 +53,22 @@ export const StudentProposalPage = () => {
 
   // Fetch my proposal draft
   const { data, isLoading } = useQuery({
-    queryKey: ['myProposal'],
+    queryKey: ['myProposal', selectedGroupId],
     queryFn: async () => {
-      const res = await API.get('/proposals/my-proposal');
+      const url = selectedGroupId ? `/proposals/my-proposal?groupId=${selectedGroupId}` : '/proposals/my-proposal';
+      const res = await API.get(url);
       return res.data;
     },
   });
 
   const projects = data?.projects || [];
   const project = projects.find(p => (p.id || p._id) === activeProjectId) || data?.project;
+
+  useEffect(() => {
+    if (data?.group?._id && !selectedGroupId) {
+      setSelectedGroupId(data.group._id);
+    }
+  }, [data?.group?._id, selectedGroupId]);
 
   useEffect(() => {
     if (data?.projects?.length > 0) {
@@ -87,7 +95,7 @@ export const StudentProposalPage = () => {
   // Create New Proposal Mutation
   const createProposalMutation = useMutation({
     mutationFn: async () => {
-      const res = await API.post('/proposals/create');
+      const res = await API.post('/proposals/create', { groupId: selectedGroupId || data?.group?._id });
       return res.data;
     },
     onSuccess: (resData) => {
@@ -181,7 +189,11 @@ export const StudentProposalPage = () => {
   // AI Recommendation Mutation
   const aiRecommendationMutation = useMutation({
     mutationFn: async (selectedDomain) => {
-      const res = await API.post('/proposals/ai-recommendations', { domain: selectedDomain, projectId: activeProjectId });
+      const res = await API.post('/proposals/ai-recommendations', {
+        domain: selectedDomain,
+        projectId: activeProjectId,
+        groupId: selectedGroupId || data?.group?._id,
+      });
       return res.data;
     },
   });
@@ -303,9 +315,68 @@ export const StudentProposalPage = () => {
   const rejectedProjects = projects.filter(p => p.status === 'REJECTED' || p.isArchived);
 
   return (
-    <div className="flex flex-col xl:flex-row gap-6 items-start">
-      {/* SIDEBAR: Project Ideas List */}
-      <div className="w-full xl:w-72 shrink-0 space-y-4">
+    <div className="space-y-6">
+      {/* Active Group Selector Banner / Tabs */}
+      {data?.groups && data.groups.length > 0 && (
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Current Project Group</span>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                  {data.groups.length} {data.groups.length === 1 ? 'Group' : 'Groups'}
+                </span>
+              </div>
+              <h2 className="text-base font-bold text-slate-800">
+                {data.group?.name || 'My Project Group'}
+                {data.group?.code && (
+                  <span className="ml-2 text-xs font-mono font-medium text-slate-500">
+                    ({data.group.code})
+                  </span>
+                )}
+              </h2>
+            </div>
+          </div>
+
+          {/* Group Switcher Tabs */}
+          {data.groups.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+              <span className="text-xs font-semibold text-slate-500 mr-1 shrink-0">Switch Group:</span>
+              {data.groups.map((g) => {
+                const gId = g.id || g._id;
+                const isCurrent = String(gId) === String(selectedGroupId || data.group?._id);
+                return (
+                  <button
+                    key={gId}
+                    type="button"
+                    onClick={() => {
+                      setSelectedGroupId(gId);
+                      setActiveProjectId(null);
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center space-x-2 ${
+                      isCurrent
+                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span>{g.name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${isCurrent ? 'bg-blue-700 text-blue-100' : 'bg-slate-200 text-slate-600'}`}>
+                      {g.userRole}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col xl:flex-row gap-6 items-start">
+        {/* SIDEBAR: Project Ideas List */}
+        <div className="w-full xl:w-72 shrink-0 space-y-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Proposal Slots</h3>
@@ -359,7 +430,7 @@ export const StudentProposalPage = () => {
               );
             })}
 
-            {activeProjects.length < 3 && !activeProjects.find(p => p.status === 'APPROVED') && (
+            {activeProjects.length < 3 && (
               <button
                 onClick={() => createProposalMutation.mutate()}
                 disabled={createProposalMutation.isPending}
@@ -1147,6 +1218,7 @@ export const StudentProposalPage = () => {
       )}
 
       </div>
+    </div>
     </div>
   );
 };

@@ -125,9 +125,7 @@ export const StudentFilesPage = ({ facultyMode = false, specificProjectId = null
       alert("Please provide a file name and select a file to upload.");
       return;
     }
-    const payload = { name, category, description, relatedToType, fileUrl };
-    if (specificProjectId) payload.projectId = specificProjectId;
-    uploadFileMutation.mutate(payload);
+    uploadFileMutation.mutate({ name, category, description, relatedToType, fileUrl });
   };
 
   if (isLoading) return <LoadingSpinner text="Loading Project Files..." />;
@@ -152,20 +150,22 @@ export const StudentFilesPage = ({ facultyMode = false, specificProjectId = null
             <Folder className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Shared Project Files</h1>
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Project Files</h1>
             <p className="text-sm text-slate-500 mt-1">
               Central document storage for SRS, designs, presentations, and reports.
             </p>
           </div>
         </div>
 
-        <button
-          onClick={() => { resetForm(); setIsModalOpen(true); }}
-          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold shadow-md transition-all flex items-center space-x-1.5 shrink-0"
-        >
-          <Upload className="w-4 h-4" />
-          <span>Upload File</span>
-        </button>
+        {!facultyMode && (
+          <button
+            onClick={() => { resetForm(); setIsModalOpen(true); }}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold shadow-md transition-all flex items-center space-x-1.5 shrink-0"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Upload File</span>
+          </button>
+        )}
       </div>
 
       {/* Files Dashboard View */}
@@ -176,12 +176,14 @@ export const StudentFilesPage = ({ facultyMode = false, specificProjectId = null
           <p className="text-slate-500 mt-2 max-w-md mx-auto">
             Upload your first project document to start building your centralized file storage.
           </p>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="mt-6 px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors"
-          >
-            Upload File
-          </button>
+          {!facultyMode && (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="mt-6 px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors"
+            >
+              Upload File
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
@@ -194,9 +196,7 @@ export const StudentFilesPage = ({ facultyMode = false, specificProjectId = null
               </div>
               <div className="divide-y divide-slate-100">
                 {groupedFiles[cat].map(f => {
-                  const userRole = authData?.user?.role;
-                  const isUploader = f.uploaderId?._id === myUserId || f.uploaderId === myUserId;
-                  const canDelete = isUploader || userRole === 'FACULTY' || userRole === 'ADMIN'; 
+                  const canDelete = f.uploaderId?._id === myUserId; 
 
                   return (
                     <div key={f._id} className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">

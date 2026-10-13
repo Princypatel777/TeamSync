@@ -11,20 +11,48 @@ export const resolveAndVerifyProjectId = async (req) => {
     return requestedProjectId || null;
   }
 
-  // For Students, they ONLY get their own project. If they request a different one, return null.
+  // For Students, they get access to projects of any group they belong to.
   if (user.role === 'STUDENT') {
-    const membership = await GroupMember.findOne({
+    const memberships = await GroupMember.find({
       userId: user._id,
       status: 'ACCEPTED',
     });
-    if (!membership) return null;
+    if (!memberships || memberships.length === 0) return null;
+
+    const groupIds = memberships.map((m) => m.groupId);
 
     if (requestedProjectId) {
-      const specificProject = await Project.findOne({ _id: requestedProjectId, groupId: membership.groupId });
+      const specificProject = await Project.findOne({ _id: requestedProjectId, groupId: { $in: groupIds } });
       if (specificProject) return specificProject._id;
     }
 
-    const project = await Project.findOne({ groupId: membership.groupId }).sort({ updatedAt: -1 });
+    const requestedGroupId = req.query.groupId || req.body.groupId;
+    if (requestedGroupId && groupIds.some((gId) => String(gId) === String(requestedGroupId))) {
+      const groupProject = await Project.findOne({ groupId: requestedGroupId });
+      if (groupProject) return groupProject._id;
+    }
+
+    let project = await Project.findOne({ groupId: { $in: groupIds } }).sort({ updatedAt: -1 });
+    if (!project) {
+      const group = await ProjectGroup.findById(groupIds[0]);
+      if (group) {
+        const defaultKey = (group.name || 'PROJ')
+          .split(' ')
+          .map((w) => w[0])
+          .join('')
+          .toUpperCase()
+          .substring(0, 4) || 'PROJ';
+
+        project = await Project.create({
+          groupId: group._id,
+          departmentId: group.departmentId || null,
+          sgpCycleId: group.sgpCycleId || null,
+          title: `${group.name} SGP Project`,
+          projectKey: defaultKey,
+          status: 'DRAFT',
+        });
+      }
+    }
     if (!project) return null;
     return project._id;
   }

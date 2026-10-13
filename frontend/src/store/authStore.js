@@ -34,6 +34,63 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
+  register: async (userData) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await API.post('/auth/register', userData);
+      const { token, user } = response.data;
+
+      localStorage.setItem('teamsync_token', token);
+      localStorage.setItem('teamsync_user', JSON.stringify(user));
+
+      set({
+        user,
+        token,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+      });
+
+      return { success: true, user };
+    } catch (err) {
+      const message =
+        err.response?.data?.message || 'Registration failed. Please check your details.';
+      set({ isLoading: false, error: message });
+      return { success: false, message };
+    }
+  },
+
+  loginWithGoogle: async (googleData) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await API.post('/auth/google', googleData);
+      const { token, user, requiresSetup } = response.data;
+
+      if (requiresSetup) {
+        set({ isLoading: false, error: null });
+        return { success: false, requiresSetup: true, data: response.data };
+      }
+
+      localStorage.setItem('teamsync_token', token);
+      localStorage.setItem('teamsync_user', JSON.stringify(user));
+
+      set({
+        user,
+        token,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+      });
+
+      return { success: true, user };
+    } catch (err) {
+      const message =
+        err.response?.data?.message || 'Google Sign-In failed.';
+      set({ isLoading: false, error: message });
+      return { success: false, message };
+    }
+  },
+
   fetchMe: async () => {
     if (!localStorage.getItem('teamsync_token')) {
       set({ user: null, isAuthenticated: false });

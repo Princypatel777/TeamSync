@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import ProjectGroup from '../models/ProjectGroup.js';
 import GroupMember from '../models/GroupMember.js';
-import Project from '../models/Project.js';
 import User from '../models/User.js';
 import StudentProfile from '../models/StudentProfile.js';
 import SystemConfig from '../models/SystemConfig.js';
@@ -31,18 +30,7 @@ export const createGroup = async (req, res, next) => {
     const user = req.user;
     const validated = createGroupSchema.parse(req.body);
 
-    // Check if student is already in an active group
-    const existingMembership = await GroupMember.findOne({
-      userId: user._id,
-      status: 'ACCEPTED',
-    });
 
-    if (existingMembership) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already belong to an active project group.',
-      });
-    }
 
     // Auto-generate group code e.g. GRP-2026-X8A2
     const randomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -103,18 +91,7 @@ export const joinGroupByCode = async (req, res, next) => {
 
     const trimmedCode = code.trim().toUpperCase();
 
-    // Check if student is already in an active group
-    const existingMembership = await GroupMember.findOne({
-      userId: user._id,
-      status: 'ACCEPTED',
-    });
 
-    if (existingMembership) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already belong to an active project group.',
-      });
-    }
 
     const group = await ProjectGroup.findOne({ code: trimmedCode });
     if (!group) {
@@ -168,11 +145,7 @@ export const joinGroupByCode = async (req, res, next) => {
       });
     }
 
-    // Reject all other pending invitations for this student
-    await GroupMember.updateMany(
-      { userId: user._id, status: 'INVITED', _id: { $ne: membership._id } },
-      { status: 'REJECTED' }
-    );
+
 
     await logAuditEvent({
       actor: user,
@@ -201,44 +174,61 @@ export const getMyGroup = async (req, res, next) => {
   try {
     const user = req.user;
 
-    const membership = await GroupMember.findOne({
+    const memberships = await GroupMember.find({
       userId: user._id,
       status: 'ACCEPTED',
-    }).populate({
-      path: 'groupId',
-      populate: [
-        { path: 'leaderId', select: 'name email enrollmentNumber' },
-        { path: 'guideId', select: 'name email designation' },
-        { path: 'coGuideId', select: 'name email designation' },
-        { path: 'sgpCycleId', select: 'name' },
-        { path: 'departmentId', select: 'name code' },
-      ],
-    });
+    }).populate('groupId');
 
-    if (!membership || !membership.groupId) {
-      // Check if student has pending invites
-      const pendingInvites = await GroupMember.find({
-        userId: user._id,
-        status: 'INVITED',
+    const validMemberships = memberships.filter((m) => m.groupId);
+
+    // Check if student has pending invites
+    const pendingInvites = await GroupMember.find({
+      userId: user._id,
+      status: 'INVITED',
+    })
+      .populate({
+        path: 'groupId',
+        populate: { path: 'leaderId', select: 'name email enrollmentNumber' },
       })
-        .populate({
-          path: 'groupId',
-          populate: { path: 'leaderId', select: 'name email enrollmentNumber' },
-        })
-        .populate('invitedBy', 'name enrollmentNumber');
+      .populate('invitedBy', 'name enrollmentNumber');
 
+    if (validMemberships.length === 0) {
       return res.status(200).json({
         success: true,
         hasGroup: false,
         group: null,
+        groups: [],
         members: [],
         pendingInvites,
       });
     }
 
-    const group = membership.groupId;
+    const requestedGroupId = req.query.groupId;
+    let selectedMembership = validMemberships[0];
+    if (requestedGroupId) {
+      const match = validMemberships.find((m) => String(m.groupId._id) === String(requestedGroupId));
+      if (match) selectedMembership = match;
+    }
 
-    // Get all accepted members
+    const group = selectedMembership.groupId;
+    const maxGroupSize = await getMaxGroupSize();
+
+    // Enrich all student's groups for multi-group switcher
+    const groupsList = await Promise.all(
+      validMemberships.map(async (m) => {
+        const gDoc = m.groupId;
+        const gObj = gDoc.toJSON ? gDoc.toJSON() : { ...gDoc };
+        const count = await GroupMember.countDocuments({ groupId: gDoc._id, status: 'ACCEPTED' });
+        return {
+          ...gObj,
+          userRole: m.role,
+          memberCount: count,
+          maxMembers: maxGroupSize,
+        };
+      })
+    );
+
+    // Get all accepted members for the selected group
     const memberDocs = await GroupMember.find({
       groupId: group._id,
       status: 'ACCEPTED',
@@ -247,7 +237,6 @@ export const getMyGroup = async (req, res, next) => {
       select: 'name email enrollmentNumber role',
     });
 
-    // Populate StudentProfiles for members
     const members = await Promise.all(
       memberDocs.map(async (m) => {
         const mObj = m.toJSON();
@@ -268,24 +257,19 @@ export const getMyGroup = async (req, res, next) => {
       status: 'INVITED',
     }).populate('userId', 'name enrollmentNumber email');
 
-    // Get active project if any
-    const activeProject = await Project.findOne({ groupId: group._id })
-      .populate('facultyGuideId', 'name email designation')
-      .lean();
-
-    const maxGroupSize = await getMaxGroupSize();
     const groupObj = group.toJSON ? group.toJSON() : { ...group };
     groupObj.maxMembers = maxGroupSize;
     groupObj.minMembers = 2;
-    groupObj.activeProject = activeProject || null;
 
     res.status(200).json({
       success: true,
       hasGroup: true,
       group: groupObj,
-      userRoleInGroup: membership.role,
+      groups: groupsList,
+      selectedGroupId: group._id,
+      userRoleInGroup: selectedMembership.role,
       members,
-      pendingInvites: pendingGroupInvites,
+      pendingInvites,
       sentInvites: pendingGroupInvites,
       maxMembers: maxGroupSize,
       minMembers: 2,
@@ -392,18 +376,7 @@ export const inviteMember = async (req, res, next) => {
       });
     }
 
-    // Check if candidate is already in an accepted group
-    const candidateActiveGroup = await GroupMember.findOne({
-      userId: candidate._id,
-      status: 'ACCEPTED',
-    });
 
-    if (candidateActiveGroup) {
-      return res.status(400).json({
-        success: false,
-        message: `Student '${candidate.name}' (${candidate.enrollmentNumber || candidate.email}) already belongs to a group.`,
-      });
-    }
 
     // Check existing invite
     const existingInvite = await GroupMember.findOne({
@@ -502,18 +475,7 @@ export const respondInvite = async (req, res, next) => {
     }
 
     if (action === 'ACCEPT') {
-      // Verify student didn't accept another group in parallel
-      const existingAccepted = await GroupMember.findOne({
-        userId: user._id,
-        status: 'ACCEPTED',
-      });
 
-      if (existingAccepted) {
-        return res.status(400).json({
-          success: false,
-          message: 'You already belong to another active group.',
-        });
-      }
 
       // Check if group has reached max members limit set by Admin
       const currentMembersCount = await GroupMember.countDocuments({
@@ -531,11 +493,7 @@ export const respondInvite = async (req, res, next) => {
       invite.status = 'ACCEPTED';
       await invite.save();
 
-      // Reject all other pending invitations for this student
-      await GroupMember.updateMany(
-        { userId: user._id, status: 'INVITED' },
-        { status: 'REJECTED' }
-      );
+
 
       await logAuditEvent({
         actor: user,
@@ -794,6 +752,142 @@ export const deleteGroup = async (req, res, next) => {
     await ProjectGroup.findByIdAndDelete(groupId);
 
     res.status(200).json({ success: true, message: 'Group deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc Cancel a pending invitation (by group leader)
+ * @route DELETE /api/groups/invites/:inviteId
+ */
+export const cancelInvite = async (req, res, next) => {
+  try {
+    const { inviteId } = req.params;
+    const user = req.user;
+
+    if (!mongoose.Types.ObjectId.isValid(inviteId)) {
+      return res.status(400).json({ success: false, message: 'Invalid invitation ID format.' });
+    }
+
+    const invite = await GroupMember.findById(inviteId);
+    if (!invite) {
+      return res.status(404).json({ success: false, message: 'Invitation not found.' });
+    }
+
+    if (invite.status !== 'INVITED') {
+      return res.status(400).json({ success: false, message: 'This invitation is not pending.' });
+    }
+
+    // Verify caller is leader of the group that sent the invite, or is admin
+    if (user.role !== 'ADMIN') {
+      const callerMembership = await GroupMember.findOne({
+        groupId: invite.groupId,
+        userId: user._id,
+        status: 'ACCEPTED',
+      });
+
+      if (!callerMembership || callerMembership.role !== 'LEADER') {
+        return res.status(403).json({ success: false, message: 'Only the group leader can cancel sent invitations.' });
+      }
+    }
+
+    await GroupMember.findByIdAndDelete(inviteId);
+
+    await logAuditEvent({
+      actor: user,
+      action: 'GROUP_INVITE_CANCELLED',
+      targetEntity: 'ProjectGroup',
+      targetId: invite.groupId,
+      details: { cancelledInviteId: inviteId },
+      req,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Invitation cancelled successfully.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc Remove a member from the group (by group leader)
+ * @route DELETE /api/groups/:id/members/:memberId
+ */
+export const removeMember = async (req, res, next) => {
+  try {
+    const { id, memberId } = req.params;
+    const user = req.user;
+
+    const group = await ProjectGroup.findById(id);
+    if (!group) {
+      return res.status(404).json({ success: false, message: 'Group not found.' });
+    }
+
+    if (group.status !== 'FORMING' && user.role !== 'ADMIN') {
+      return res.status(400).json({ success: false, message: 'Members can only be removed while the group is in FORMING status.' });
+    }
+
+    if (user.role !== 'ADMIN') {
+      const callerMembership = await GroupMember.findOne({
+        groupId: id,
+        userId: user._id,
+        status: 'ACCEPTED',
+      });
+
+      if (!callerMembership || callerMembership.role !== 'LEADER') {
+        return res.status(403).json({ success: false, message: 'Only the group leader can remove members.' });
+      }
+    }
+
+    if (String(user._id) === String(memberId)) {
+      return res.status(400).json({ success: false, message: 'Group leader cannot be removed. Transfer leadership or leave group instead.' });
+    }
+
+    // Target member could be specified by userId or membership _id
+    let targetMember = await GroupMember.findOne({
+      groupId: id,
+      userId: memberId,
+      status: 'ACCEPTED',
+    });
+    if (!targetMember && mongoose.Types.ObjectId.isValid(memberId)) {
+      targetMember = await GroupMember.findOne({
+        _id: memberId,
+        groupId: id,
+        status: 'ACCEPTED',
+      });
+    }
+
+    if (!targetMember) {
+      return res.status(404).json({ success: false, message: 'Member not found in this group.' });
+    }
+
+    await GroupMember.findByIdAndDelete(targetMember._id);
+
+    // Notify the removed member
+    await Notification.create({
+      userId: targetMember.userId,
+      title: 'Removed from Project Group',
+      message: `You were removed from the project group "${group.name}".`,
+      type: 'GROUP',
+      linkUrl: '/student/group',
+    });
+
+    await logAuditEvent({
+      actor: user,
+      action: 'GROUP_MEMBER_REMOVED',
+      targetEntity: 'ProjectGroup',
+      targetId: id,
+      details: { removedUserId: targetMember.userId },
+      req,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Member removed from group successfully.',
+    });
   } catch (error) {
     next(error);
   }
