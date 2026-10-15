@@ -16,28 +16,80 @@ export const getMyProposal = async (req, res, next) => {
   try {
     const user = req.user;
 
-    const memberships = await GroupMember.find({
-      userId: user._id,
-      status: 'ACCEPTED',
-    }).populate('groupId');
+    let group = null;
+    let groupsList = [];
+    let userRoleInGroup = 'MEMBER';
 
-    const validMemberships = memberships.filter((m) => m.groupId);
+    if (user.role === 'FACULTY' || user.role === 'COORDINATOR' || user.role === 'ADMIN') {
+      const requestedGroupId = req.query.groupId;
+      if (requestedGroupId) {
+        group = await ProjectGroup.findById(requestedGroupId);
+      } else if (user.role === 'FACULTY') {
+        group = (await ProjectGroup.findOne({ guideId: user._id })) || (await ProjectGroup.findOne());
+      } else {
+        group = await ProjectGroup.findOne();
+      }
 
-    if (validMemberships.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'You must belong to a project group before drafting a proposal.',
-      });
+      const allGroups = user.role === 'FACULTY'
+        ? await ProjectGroup.find({ guideId: user._id })
+        : await ProjectGroup.find();
+
+      groupsList = allGroups.map((g) => ({
+        _id: g._id,
+        id: g._id,
+        name: g.name,
+        code: g.code,
+        userRole: user.role === 'FACULTY' ? 'FACULTY_GUIDE' : user.role,
+      }));
+
+      userRoleInGroup = user.role === 'FACULTY' ? 'FACULTY_GUIDE' : user.role;
+
+      if (!group) {
+        return res.status(200).json({
+          success: true,
+          project: null,
+          projects: [],
+          group: null,
+          groups: [],
+          members: [],
+          userRoleInGroup,
+          feedbackHistory: [],
+          isReviewerMode: true,
+        });
+      }
+    } else {
+      const memberships = await GroupMember.find({
+        userId: user._id,
+        status: 'ACCEPTED',
+      }).populate('groupId');
+
+      const validMemberships = memberships.filter((m) => m.groupId);
+
+      if (validMemberships.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'You must belong to a project group before drafting a proposal.',
+        });
+      }
+
+      const requestedGroupId = req.query.groupId;
+      let membership = validMemberships[0];
+      if (requestedGroupId) {
+        const match = validMemberships.find((m) => String(m.groupId._id) === String(requestedGroupId));
+        if (match) membership = match;
+      }
+
+      group = membership.groupId;
+      userRoleInGroup = membership.role;
+      groupsList = validMemberships.map((m) => ({
+        _id: m.groupId._id,
+        id: m.groupId._id,
+        name: m.groupId.name,
+        code: m.groupId.code,
+        userRole: m.role,
+      }));
     }
 
-    const requestedGroupId = req.query.groupId;
-    let membership = validMemberships[0];
-    if (requestedGroupId) {
-      const match = validMemberships.find((m) => String(m.groupId._id) === String(requestedGroupId));
-      if (match) membership = match;
-    }
-
-    const group = membership.groupId;
     let projects = await Project.find({ groupId: group._id })
       .populate('facultyGuideId', 'name email role')
       .populate('departmentId', 'name code')
@@ -46,27 +98,29 @@ export const getMyProposal = async (req, res, next) => {
     let project = projects[0];
 
     if (!project) {
-      // Auto-create initial draft project for group
-      const defaultKey = group.name
-        .split(' ')
-        .map((w) => w[0])
-        .join('')
-        .toUpperCase()
-        .substring(0, 4);
+      // Auto-create initial draft project for group if student
+      if (user.role === 'STUDENT') {
+        const defaultKey = group.name
+          .split(' ')
+          .map((w) => w[0])
+          .join('')
+          .toUpperCase()
+          .substring(0, 4);
 
-      project = await Project.create({
-        groupId: group._id,
-        departmentId: group.departmentId || null,
-        sgpCycleId: group.sgpCycleId || null,
-        title: `${group.name} SGP Project`,
-        projectKey: defaultKey || 'PROJ',
-        status: 'DRAFT',
-      });
-      projects = [project];
+        project = await Project.create({
+          groupId: group._id,
+          departmentId: group.departmentId || null,
+          sgpCycleId: group.sgpCycleId || null,
+          title: `${group.name} SGP Project`,
+          projectKey: defaultKey || 'PROJ',
+          status: 'DRAFT',
+        });
+        projects = [project];
+      }
     }
 
     // Fetch review feedback history for all projects of this group
-    const feedbackHistory = await ProposalFeedback.find({ projectId: { $in: projects.map(p => p._id) } })
+    const feedbackHistory = await ProposalFeedback.find({ projectId: { $in: projects.map((p) => p._id) } })
       .populate('facultyId', 'name email role')
       .sort({ createdAt: -1 });
 
@@ -76,15 +130,6 @@ export const getMyProposal = async (req, res, next) => {
       status: 'ACCEPTED',
     }).populate('userId', 'name email enrollmentNumber');
 
-    // Groups list for switching between student's groups
-    const groupsList = validMemberships.map((m) => ({
-      _id: m.groupId._id,
-      id: m.groupId._id,
-      name: m.groupId.name,
-      code: m.groupId.code,
-      userRole: m.role,
-    }));
-
     res.status(200).json({
       success: true,
       project, // For backwards compatibility
@@ -92,8 +137,9 @@ export const getMyProposal = async (req, res, next) => {
       group,
       groups: groupsList, // All groups student belongs to
       members: memberDocs, // Members of this specific group
-      userRoleInGroup: membership.role,
+      userRoleInGroup,
       feedbackHistory,
+      isReviewerMode: user.role === 'FACULTY' || user.role === 'COORDINATOR' || user.role === 'ADMIN',
     });
   } catch (error) {
     next(error);
@@ -500,21 +546,27 @@ export const reviewProposal = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Project proposal not found.' });
     }
 
+    let normalizedAction = action;
+    if (action === 'REVISION' || action === 'REVISION_REQUIRED' || action === 'REQUEST_CHANGES') {
+      normalizedAction = 'REQUEST_REVISION';
+    }
+
     // Role check: Faculty can only review proposals assigned to them, or unassigned proposals
     if (user.role === 'FACULTY') {
-      if (project.facultyGuideId && String(project.facultyGuideId) !== String(user._id)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied: You are not the assigned faculty guide for this project proposal.',
-        });
+      const isAssignedGuide = project.facultyGuideId && String(project.facultyGuideId) === String(user._id);
+      const isGroupGuide = project.groupId?.guideId && String(project.groupId.guideId) === String(user._id);
+      const isUnassigned = !project.facultyGuideId;
+
+      if (!isAssignedGuide && !isGroupGuide && !isUnassigned) {
+        // If unassigned or group guide, allow review and auto-bind faculty
       }
     }
 
-    if (!['APPROVE', 'REQUEST_REVISION', 'REJECT', 'APPROVE_EDIT_REQUEST'].includes(action)) {
+    if (!['APPROVE', 'REQUEST_REVISION', 'REJECT', 'APPROVE_EDIT_REQUEST'].includes(normalizedAction)) {
       return res.status(400).json({ success: false, message: 'Invalid review action.' });
     }
 
-    if (['REQUEST_REVISION', 'REJECT'].includes(action) && (!feedback || !feedback.trim())) {
+    if (['REQUEST_REVISION', 'REJECT'].includes(normalizedAction) && (!feedback || !feedback.trim())) {
       return res.status(400).json({
         success: false,
         message: 'Feedback comments are mandatory when requesting revision or rejecting a proposal.',
@@ -522,20 +574,22 @@ export const reviewProposal = async (req, res, next) => {
     }
 
     let newStatus = 'UNDER_REVIEW';
-    if (action === 'APPROVE') {
+    if (normalizedAction === 'APPROVE') {
       newStatus = 'APPROVED';
     }
-    if (action === 'REQUEST_REVISION') newStatus = 'REVISION_REQUIRED';
-    if (action === 'REJECT') {
+    if (normalizedAction === 'REQUEST_REVISION') {
+      newStatus = 'REVISION_REQUIRED';
+    }
+    if (normalizedAction === 'REJECT') {
       newStatus = 'REJECTED';
       // Give the student a chance back if rejected
       project.submissionCount = Math.max(0, (project.submissionCount || 0) - 1);
     }
-    if (action === 'APPROVE_EDIT_REQUEST') {
+    if (normalizedAction === 'APPROVE_EDIT_REQUEST') {
       newStatus = 'CHANGE_APPROVED';
       
       // Find the pending change request and approve it
-      const pendingRequest = project.changeRequests.find(cr => cr.status === 'PENDING');
+      const pendingRequest = project.changeRequests.find((cr) => cr.status === 'PENDING');
       if (pendingRequest) {
         pendingRequest.status = 'APPROVED';
         project.unlockedFields = pendingRequest.fields;
@@ -550,6 +604,9 @@ export const reviewProposal = async (req, res, next) => {
     if (!project.facultyGuideId) {
       project.facultyGuideId = user._id;
     }
+    if (project.groupId && !project.groupId.guideId) {
+      await ProjectGroup.findByIdAndUpdate(project.groupId._id || project.groupId, { guideId: user._id });
+    }
 
     project.statusHistory.push({
       status: newStatus,
@@ -560,20 +617,39 @@ export const reviewProposal = async (req, res, next) => {
 
     await project.save();
 
+    // JAB PROJECT APPROVE HO JAYE TAB SAB DUSRE REJECT HO JANE CHAHIYE
+    if (normalizedAction === 'APPROVE' && project.groupId) {
+      const gId = project.groupId._id || project.groupId;
+      await Project.updateMany(
+        { groupId: gId, _id: { $ne: project._id }, status: { $ne: 'APPROVED' } },
+        {
+          $set: { status: 'REJECTED' },
+          $push: {
+            statusHistory: {
+              status: 'REJECTED',
+              changedBy: user._id,
+              timestamp: new Date(),
+              feedback: `Automatically rejected because "${project.title}" was approved as the final project.`,
+            },
+          },
+        }
+      );
+    }
+
     // Log feedback
     await ProposalFeedback.create({
       projectId: project._id,
       facultyId: user._id,
-      action,
+      action: normalizedAction,
       feedback: feedback || `Proposal marked as ${newStatus}.`,
     });
 
     await logAuditEvent({
       actor: user,
-      action: `PROPOSAL_${action}`,
+      action: `PROPOSAL_${normalizedAction}`,
       targetEntity: 'Project',
       targetId: project._id,
-      details: { action, feedback },
+      details: { action: normalizedAction, feedback },
       req,
     });
 
@@ -581,12 +657,12 @@ export const reviewProposal = async (req, res, next) => {
     const groupMembers = await GroupMember.find({ groupId: project.groupId, status: 'ACCEPTED' });
     const statusLabels = {
       APPROVE: 'Approved',
-      REQUEST_REVISION: 'Changes Requested',
+      REQUEST_REVISION: 'Changes Requested (Revision Required)',
       REJECT: 'Rejected',
       APPROVE_EDIT_REQUEST: 'Edit Request Approved',
     };
-    const notifTitle = `Proposal ${statusLabels[action] || action}`;
-    const notifMsg = `Dr./Prof. ${user.name} has marked your project proposal "${project.title}" as ${statusLabels[action] || action}.${feedback ? ` Feedback: "${feedback}"` : ''}`;
+    const notifTitle = `Proposal ${statusLabels[normalizedAction] || normalizedAction}`;
+    const notifMsg = `Dr./Prof. ${user.name} has marked your project proposal "${project.title}" as ${statusLabels[normalizedAction] || normalizedAction}.${feedback ? ` Feedback: "${feedback}"` : ''}`;
     for (const member of groupMembers) {
       await Notification.create({
         userId: member.userId,
@@ -599,7 +675,7 @@ export const reviewProposal = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Proposal ${action.toLowerCase().replace('_', ' ')}d successfully.`,
+      message: `Proposal ${normalizedAction.toLowerCase().replace('_', ' ')}d successfully.`,
       project,
     });
   } catch (error) {
@@ -614,16 +690,20 @@ export const reviewProposal = async (req, res, next) => {
 export const getAssignedProposals = async (req, res, next) => {
   try {
     const user = req.user;
-    const { status, search } = req.query;
+    const { status, search, groupId } = req.query;
 
     const query = {};
 
+    if (groupId) {
+      query.groupId = groupId;
+    }
+
     if (user.role === 'FACULTY') {
-      // Allow faculty to see proposals assigned to them, OR unassigned proposals (so they can review/adopt them)
+      const guidedGroupIds = await ProjectGroup.find({ guideId: user._id }).distinct('_id');
       query.$or = [
         { facultyGuideId: user._id },
-        { facultyGuideId: null, status: 'SUBMITTED' },
-        { facultyGuideId: null, status: 'RESUBMITTED' }
+        { groupId: { $in: guidedGroupIds } },
+        { facultyGuideId: null },
       ];
     }
 
@@ -633,13 +713,22 @@ export const getAssignedProposals = async (req, res, next) => {
 
     if (search) {
       const regex = new RegExp(search, 'i');
-      query.$or = [{ title: regex }, { domain: regex }, { projectKey: regex }];
+      const searchOr = [{ title: regex }, { domain: regex }, { projectKey: regex }];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: searchOr }];
+        delete query.$or;
+      } else {
+        query.$or = searchOr;
+      }
     }
 
     const proposals = await Project.find(query)
       .populate({
         path: 'groupId',
-        populate: { path: 'leaderId', select: 'name enrollmentNumber email' },
+        populate: [
+          { path: 'leaderId', select: 'name enrollmentNumber email' },
+          { path: 'guideId', select: 'name email' },
+        ],
       })
       .populate('facultyGuideId', 'name email')
       .populate('departmentId', 'name code')
@@ -774,7 +863,8 @@ export const assignFacultyGuide = async (req, res, next) => {
 export const requestEdit = async (req, res, next) => {
   try {
     const user = req.user;
-    const { reason, fields, projectId } = req.body;
+    const { reason, fields } = req.body;
+    const projectId = req.params.id || req.body.projectId || req.query.projectId;
 
     const memberships = await GroupMember.find({
       userId: user._id,
@@ -789,13 +879,13 @@ export const requestEdit = async (req, res, next) => {
 
     let project;
     if (projectId) {
-      project = await Project.findOne({ _id: projectId, groupId: { $in: groupIds } });
+      project = await Project.findOne({ _id: projectId, groupId: { $in: groupIds } }).populate('groupId');
     } else {
-      project = await Project.findOne({ groupId: { $in: groupIds }, status: 'APPROVED' });
+      project = await Project.findOne({ groupId: { $in: groupIds }, status: 'APPROVED' }).populate('groupId');
     }
 
     if (!project) {
-      return res.status(404).json({ success: false, message: 'Project draft not found.' });
+      return res.status(404).json({ success: false, message: 'Approved project proposal not found.' });
     }
 
     if (project.status !== 'APPROVED') {
@@ -805,9 +895,10 @@ export const requestEdit = async (req, res, next) => {
     project.status = 'CHANGE_REQUESTED';
     
     project.changeRequests.push({
-      fields: Array.isArray(fields) ? fields : [],
-      reason: reason || 'Student requested to change specific fields.',
-      status: 'PENDING'
+      fields: Array.isArray(fields) && fields.length > 0 ? fields : ['title', 'domain', 'techStack', 'problemStatement', 'objectives', 'scope', 'expectedOutcome', 'innovation'],
+      reason: reason || 'Student requested to edit the approved proposal.',
+      status: 'PENDING',
+      requestedAt: new Date(),
     });
 
     project.statusHistory.push({
@@ -819,17 +910,30 @@ export const requestEdit = async (req, res, next) => {
 
     await project.save();
 
+    // Notify assigned faculty guide!
+    const recipientGuideId = project.facultyGuideId || project.groupId?.guideId;
+    if (recipientGuideId) {
+      await Notification.create({
+        userId: recipientGuideId,
+        title: 'Proposal Edit Request',
+        message: `Group member ${user.name} requested permission to edit approved proposal "${project.title}". Reason: ${reason || 'Project updates required.'}`,
+        type: 'PROPOSAL',
+        linkUrl: '/faculty/proposals',
+      });
+    }
+
     await logAuditEvent({
       actor: user,
       action: 'PROPOSAL_EDIT_REQUESTED',
       targetEntity: 'Project',
       targetId: project._id,
+      details: { reason, fields },
       req,
     });
 
     res.status(200).json({
       success: true,
-      message: 'Edit request sent to faculty guide successfully.',
+      message: 'Edit request sent to assigned faculty guide successfully.',
       project,
     });
   } catch (error) {

@@ -8,13 +8,24 @@ import AuditLog from '../models/AuditLog.js';
 import Notification from '../models/Notification.js';
 import SystemConfig from '../models/SystemConfig.js';
 import GithubIntegration from '../models/GithubIntegration.js';
+import Department from '../models/Department.js';
+import SGPCycle from '../models/SGPCycle.js';
+import AcademicYear from '../models/AcademicYear.js';
 import { notifyProjectMembers } from '../utils/notificationUtils.js';
 
 // ================= INSTITUTIONAL ANALYTICS (FR-1701 & FR-1702) =================
 export const getAnalyticsDashboard = async (req, res, next) => {
   try {
+    const totalUsers = await User.countDocuments();
     const totalStudents = await User.countDocuments({ role: 'STUDENT' });
     const totalFaculty = await User.countDocuments({ role: 'FACULTY' });
+    const totalCoordinators = await User.countDocuments({ role: 'COORDINATOR' });
+    const totalAdmins = await User.countDocuments({ role: 'ADMIN' });
+
+    const totalDepartments = await Department.countDocuments({ isActive: true });
+    const totalSgpCycles = await SGPCycle.countDocuments({ isActive: true });
+    const totalAcademicYears = await AcademicYear.countDocuments({ isActive: true });
+
     const totalGroups = await ProjectGroup.countDocuments();
     const approvedProjects = await Project.countDocuments({ status: { $in: ['APPROVED', 'COMPLETED'] } });
     const pendingProposals = await Project.countDocuments({ status: 'PENDING_APPROVAL' });
@@ -41,8 +52,14 @@ export const getAnalyticsDashboard = async (req, res, next) => {
     res.status(200).json({
       success: true,
       kpis: {
+        totalUsers,
         totalStudents,
         totalFaculty,
+        totalCoordinators,
+        totalAdmins,
+        totalDepartments,
+        totalSgpCycles,
+        totalAcademicYears,
         totalGroups,
         approvedProjects,
         pendingProposals,

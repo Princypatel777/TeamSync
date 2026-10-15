@@ -26,13 +26,23 @@ export const resolveAndVerifyProjectId = async (req) => {
       if (specificProject) return specificProject._id;
     }
 
-    const requestedGroupId = req.query.groupId || req.body.groupId;
+    const requestedGroupId = req.query.groupId || req.body.groupId || req.params?.groupId;
     if (requestedGroupId && groupIds.some((gId) => String(gId) === String(requestedGroupId))) {
-      const groupProject = await Project.findOne({ groupId: requestedGroupId });
+      let groupProject = await Project.findOne({ groupId: requestedGroupId, status: { $in: ['APPROVED', 'DEVELOPMENT_ACTIVE'] } });
+      if (!groupProject) groupProject = await Project.findOne({ groupId: requestedGroupId, status: { $ne: 'REJECTED' } }).sort({ updatedAt: -1 });
+      if (!groupProject) groupProject = await Project.findOne({ groupId: requestedGroupId }).sort({ updatedAt: -1 });
       if (groupProject) return groupProject._id;
     }
 
-    let project = await Project.findOne({ groupId: { $in: groupIds } }).sort({ updatedAt: -1 });
+    // Prioritize approved/active project for this student group over rejected proposals
+    let project = await Project.findOne({ groupId: { $in: groupIds }, status: { $in: ['APPROVED', 'DEVELOPMENT_ACTIVE'] } });
+    if (!project) {
+      project = await Project.findOne({ groupId: { $in: groupIds }, status: { $ne: 'REJECTED' } }).sort({ updatedAt: -1 });
+    }
+    if (!project) {
+      project = await Project.findOne({ groupId: { $in: groupIds } }).sort({ updatedAt: -1 });
+    }
+
     if (!project) {
       const group = await ProjectGroup.findById(groupIds[0]);
       if (group) {
@@ -57,27 +67,56 @@ export const resolveAndVerifyProjectId = async (req) => {
     return project._id;
   }
 
-  // For Faculty (Guide / CC Faculty), they must request a specific projectId and we verify their assignment.
+  // For Faculty (Guide / CC Faculty)
   if (['FACULTY'].includes(user.role)) {
-    if (!requestedProjectId) return null;
+    if (requestedProjectId) {
+      const project = await Project.findById(requestedProjectId);
+      if (project) {
+        const group = await ProjectGroup.findOne({
+          _id: project.groupId,
+          $or: [
+            { guideId: user._id },
+            { coGuideId: user._id }
+          ]
+        });
+        const isLegacyGuide = String(project.facultyGuideId) === String(user._id);
+        if (group || isLegacyGuide) return project._id;
+      }
+    }
 
-    const project = await Project.findById(requestedProjectId);
-    if (!project) return null;
+    const requestedGroupId = req.query.groupId || req.body.groupId || req.params?.groupId;
+    if (requestedGroupId) {
+      const group = await ProjectGroup.findOne({
+        _id: requestedGroupId,
+        $or: [
+          { guideId: user._id },
+          { coGuideId: user._id }
+        ]
+      });
+      const legacyProject = await Project.findOne({ groupId: requestedGroupId, facultyGuideId: user._id });
 
-    // Check if faculty is guide or co-guide of the group
-    const group = await ProjectGroup.findOne({
-      _id: project.groupId,
+      if (group || legacyProject) {
+        let p = await Project.findOne({ groupId: requestedGroupId, status: { $in: ['APPROVED', 'DEVELOPMENT_ACTIVE'] } });
+        if (!p) p = await Project.findOne({ groupId: requestedGroupId, status: { $ne: 'REJECTED' } }).sort({ updatedAt: -1 });
+        if (!p) p = await Project.findOne({ groupId: requestedGroupId }).sort({ updatedAt: -1 });
+        if (p) return p._id;
+      }
+    }
+
+    // Default to first guided group's project if available
+    const guidedGroup = await ProjectGroup.findOne({
       $or: [
         { guideId: user._id },
         { coGuideId: user._id }
       ]
     });
-    
-    // Also check backward compatibility: faculty is legacy facultyGuideId on the project
-    const isLegacyGuide = String(project.facultyGuideId) === String(user._id);
+    if (guidedGroup) {
+      let p = await Project.findOne({ groupId: guidedGroup._id, status: { $in: ['APPROVED', 'DEVELOPMENT_ACTIVE'] } });
+      if (!p) p = await Project.findOne({ groupId: guidedGroup._id, status: { $ne: 'REJECTED' } }).sort({ updatedAt: -1 });
+      if (p) return p._id;
+    }
 
-    if (!group && !isLegacyGuide) return null;
-    return project._id;
+    return null;
   }
 
   return null;

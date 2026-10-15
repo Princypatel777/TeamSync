@@ -6,6 +6,11 @@ import Proposal from '../models/Project.js'; // Using Project for proposals
 import User from '../models/User.js';
 import FacultyProfile from '../models/FacultyProfile.js';
 import Department from '../models/Department.js';
+import Bug from '../models/Bug.js';
+import Milestone from '../models/Milestone.js';
+import WikiPage from '../models/WikiPage.js';
+import Requirement from '../models/Requirement.js';
+import Review from '../models/Review.js';
 
 export const getFacultyProfile = async (req, res, next) => {
   try {
@@ -119,14 +124,27 @@ export const getMyAssignedGroups = async (req, res, next) => {
       .populate('leaderId', 'name enrollmentNumber')
       .lean();
 
+    const groupIds = groups.map(g => g._id);
+
+    // Fetch all reviews involving this faculty or these groups
+    const assignedReviews = await Review.find({
+      $or: [
+        { facultyReviewers: facultyId },
+        { assignedGroups: { $in: groupIds } }
+      ]
+    }).lean();
+
+    const publishedReviewsCount = assignedReviews.filter(r => r.status === 'PUBLISHED').length;
+    const upcomingEvaluationsCount = assignedReviews.filter(r => r.status === 'PUBLISHED' || new Date(r.reviewDate) >= new Date()).length;
+
     const summary = {
       totalGroups: groups.length,
       totalStudents: 0,
       activeProjects: 0,
       pendingProposals: 0,
-      pendingReviews: 0,
+      pendingReviews: publishedReviewsCount,
       overdueTasks: 0,
-      upcomingEvaluations: 0,
+      upcomingEvaluations: upcomingEvaluationsCount,
     };
 
     const groupDetails = await Promise.all(groups.map(async (group) => {
@@ -142,24 +160,24 @@ export const getMyAssignedGroups = async (req, res, next) => {
 
       const pendingProposals = projects.filter(p => ['SUBMITTED', 'CHANGE_REQUESTED'].includes(p.status));
       summary.pendingProposals += pendingProposals.length;
-      
-      // Placeholder for upcoming evaluations (this can be calculated from milestone/review dates later)
-      summary.upcomingEvaluations += 0; 
 
-      // Calculate progress and tasks for the active project
+      // Target project for display and progress: prioritize approved, else pending/latest proposal
+      const targetProject = activeProject || projects[0] || null;
+
+      // Calculate progress and tasks for the target project
       let progress = 0;
       let pendingTasksCount = 0;
       let overdueTasksCount = 0;
 
-      if (activeProject) {
-        const totalTasks = await Task.countDocuments({ projectId: activeProject._id });
-        const doneTasks = await Task.countDocuments({ projectId: activeProject._id, status: 'DONE' });
+      if (targetProject) {
+        const totalTasks = await Task.countDocuments({ projectId: targetProject._id });
+        const doneTasks = await Task.countDocuments({ projectId: targetProject._id, status: 'DONE' });
         if (totalTasks > 0) progress = Math.round((doneTasks / totalTasks) * 100);
         
-        pendingTasksCount = await Task.countDocuments({ projectId: activeProject._id, status: { $ne: 'DONE' } });
+        pendingTasksCount = await Task.countDocuments({ projectId: targetProject._id, status: { $ne: 'DONE' } });
         
         const overdueTasks = await Task.countDocuments({ 
-          projectId: activeProject._id, 
+          projectId: targetProject._id, 
           status: { $ne: 'DONE' },
           dueDate: { $lt: new Date() }
         });
@@ -170,7 +188,8 @@ export const getMyAssignedGroups = async (req, res, next) => {
       return {
         ...group,
         studentCount,
-        activeProject: activeProject || null,
+        activeProject: targetProject,
+        isApproved: Boolean(activeProject),
         pendingReviewsCount: pendingProposals.length,
         progress,
         overdueTasksCount
@@ -216,11 +235,68 @@ export const getGroupContext = async (req, res, next) => {
 
     const projects = await Project.find({ groupId: group._id }).lean();
     const activeProject = projects.find(p => p.status === 'DEVELOPMENT_ACTIVE' || p.status === 'APPROVED');
+    const selectedProject = activeProject || projects[0] || null;
+
+    let stats = {
+      totalTasks: 0,
+      completedTasks: 0,
+      inProgressTasks: 0,
+      todoTasks: 0,
+      totalBugs: 0,
+      openBugs: 0,
+      resolvedBugs: 0,
+      totalMilestones: 0,
+      totalWikiPages: 0,
+      totalRequirements: 0,
+    };
+
+    if (selectedProject) {
+      const [
+        totalTasks,
+        completedTasks,
+        inProgressTasks,
+        todoTasks,
+        totalBugs,
+        openBugs,
+        resolvedBugs,
+        totalMilestones,
+        totalWikiPages,
+        totalRequirements,
+      ] = await Promise.all([
+        Task.countDocuments({ projectId: selectedProject._id }),
+        Task.countDocuments({ projectId: selectedProject._id, status: 'DONE' }),
+        Task.countDocuments({ projectId: selectedProject._id, status: 'IN_PROGRESS' }),
+        Task.countDocuments({ projectId: selectedProject._id, status: 'TODO' }),
+        Bug.countDocuments({ projectId: selectedProject._id }),
+        Bug.countDocuments({ projectId: selectedProject._id, status: { $in: ['OPEN', 'IN_PROGRESS', 'REOPENED'] } }),
+        Bug.countDocuments({ projectId: selectedProject._id, status: { $in: ['FIXED', 'CLOSED'] } }),
+        Milestone.countDocuments({ projectId: selectedProject._id }),
+        WikiPage.countDocuments({ projectId: selectedProject._id }),
+        Requirement.countDocuments({ projectId: selectedProject._id }),
+      ]);
+
+      stats = {
+        totalTasks,
+        completedTasks,
+        inProgressTasks,
+        todoTasks,
+        totalBugs,
+        openBugs,
+        resolvedBugs,
+        totalMilestones,
+        totalWikiPages,
+        totalRequirements,
+      };
+    }
 
     res.status(200).json({
       success: true,
       group: { ...group, members },
-      project: activeProject || null
+      project: selectedProject,
+      activeProject: activeProject || null,
+      isApproved: Boolean(activeProject),
+      projects,
+      stats,
     });
   } catch (error) {
     next(error);

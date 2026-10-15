@@ -376,7 +376,7 @@ export const createTask = async (req, res, next) => {
       featureId: featureId || null,
       sprintId: sprintId || null,
       checklistItemId: checklistItemId || null,
-      assigneeId: assigneeId || user._id,
+      assigneeId: assigneeId ? assigneeId : null,
       reporterId: user._id,
       priority: priority || 'MEDIUM',
       status: 'TO_DO',
@@ -427,7 +427,13 @@ const syncChecklistItemStatus = async (task) => {
 export const updateTask = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = { ...req.body };
+    if (!updateData.assigneeId) updateData.assigneeId = null;
+    if (!updateData.featureId) updateData.featureId = null;
+    if (!updateData.sprintId) updateData.sprintId = null;
+    if (!updateData.checklistItemId) updateData.checklistItemId = null;
+    if (!updateData.dueDate) updateData.dueDate = null;
+    if (!updateData.startDate) updateData.startDate = null;
     
     const task = await Task.findByIdAndUpdate(id, updateData, { new: true });
     
@@ -600,7 +606,9 @@ export const updateBug = async (req, res, next) => {
     const projectId = await resolveAndVerifyProjectId(req);
 
     const payload = { ...req.body };
-    if (payload.assigneeId === '') payload.assigneeId = null;
+    if (!payload.assigneeId) payload.assigneeId = null;
+    if (!payload.featureId) payload.featureId = null;
+    if (!payload.dueDate) payload.dueDate = null;
 
     const bug = await Bug.findOneAndUpdate(
       { _id: id, projectId },

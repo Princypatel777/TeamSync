@@ -178,33 +178,40 @@ export const saveWikiPage = async (req, res, next) => {
     if (!projectId) return res.status(400).json({ success: false, message: 'Active project required.' });
 
     const { title, content, category, attachmentUrl } = req.body;
-    const slug = title.toLowerCase().replace(/[^a-z0-9]/g, '-');
-
-    // Check if updating existing by ID (which StudentWikiPage now passes)
-    let page;
-    if (req.body._id) {
-      page = await WikiPage.findOne({ _id: req.body._id, projectId });
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, message: 'Wiki page title is required.' });
     }
-    
-    if (!page) {
-       page = await WikiPage.findOne({ projectId, slug });
+
+    const targetId = req.params.id || req.body._id;
+    let page = null;
+
+    if (targetId && String(targetId).trim().length === 24) {
+      page = await WikiPage.findOne({ _id: targetId, projectId });
+    }
+
+    let baseSlug = title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
+    let slug = baseSlug;
+    let counter = 1;
+
+    while (await WikiPage.findOne({ projectId, slug, ...(page ? { _id: { $ne: page._id } } : {}) })) {
+      slug = `${baseSlug}-${counter++}`;
     }
 
     if (page) {
-      page.title = title;
-      page.content = content;
+      page.title = title.trim();
+      page.content = content || '';
       page.category = category || 'Technical Documentation';
       page.attachmentUrl = attachmentUrl || '';
-      // allow slug update if title changed? Let's just keep original slug to avoid breaking links.
+      page.slug = slug;
       await page.save();
     } else {
       page = await WikiPage.create({
         projectId,
-        title,
+        title: title.trim(),
         slug,
         category: category || 'Technical Documentation',
         attachmentUrl: attachmentUrl || '',
-        content,
+        content: content || '',
         authorId: user._id,
       });
     }

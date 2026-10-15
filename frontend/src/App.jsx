@@ -207,8 +207,8 @@ export const App = () => {
             <Route path="student/dashboard" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentDashboard /></ProtectedRoute>} />
             <Route path="student/profile" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentProfilePage /></ProtectedRoute>} />
             <Route path="student/group" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentGroupPage /></ProtectedRoute>} />
-            <Route path="student/project" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentProposalPage /></ProtectedRoute>} />
-            <Route path="student/proposal" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentProposalPage /></ProtectedRoute>} />
+            <Route path="student/project" element={<ProtectedRoute allowedRoles={['STUDENT', 'FACULTY', 'COORDINATOR', 'ADMIN']}><StudentProposalPage /></ProtectedRoute>} />
+            <Route path="student/proposal" element={<ProtectedRoute allowedRoles={['STUDENT', 'FACULTY', 'COORDINATOR', 'ADMIN']}><StudentProposalPage /></ProtectedRoute>} />
             <Route path="student/requirements" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentRequirementsPage /></ProtectedRoute>} />
             <Route path="student/features" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentFeaturesPage /></ProtectedRoute>} />
             <Route path="student/kanban" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentKanbanPage /></ProtectedRoute>} />
@@ -221,7 +221,7 @@ export const App = () => {
             <Route path="student/wiki" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentWikiPage /></ProtectedRoute>} />
             <Route path="student/chat" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentChatPage /></ProtectedRoute>} />
             <Route path="student/github" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentGithubPage /></ProtectedRoute>} />
-            <Route path="student/releases" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentReleasesPage /></ProtectedRoute>} />
+            <Route path="student/releases" element={<Navigate to="/student/dashboard" replace />} />
             <Route path="student/calendar" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentCalendarPage /></ProtectedRoute>} />
             <Route path="student/reviews" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentMarksPage /></ProtectedRoute>} />
             <Route path="student/peer-evaluation" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN']}><StudentPeerEvalPage /></ProtectedRoute>} />

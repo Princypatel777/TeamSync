@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import API from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import StatusBadge from '../../components/common/StatusBadge';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import {
@@ -28,6 +30,7 @@ import {
 } from 'lucide-react';
 
 export const StudentProposalPage = () => {
+  const { user } = useAuthStore();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('DRAFT'); // DRAFT | AI | SIMILARITY
   const [activeProjectId, setActiveProjectId] = useState(null);
@@ -316,6 +319,21 @@ export const StudentProposalPage = () => {
 
   return (
     <div className="space-y-6">
+      {/* Faculty / Coordinator Reviewer Banner */}
+      {(data?.isReviewerMode || ['FACULTY', 'COORDINATOR'].includes(user?.role)) && (
+        <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between text-indigo-900 shadow-xs">
+          <div className="flex items-center space-x-2 text-sm font-semibold">
+            <ShieldCheck className="w-5 h-5 text-indigo-600" />
+            <span>Faculty Guide Inspection Mode: Viewing Group Proposal ({data?.group?.name || 'Group'})</span>
+          </div>
+          <Link
+            to="/faculty/proposals"
+            className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-700 transition"
+          >
+            Open Review Desk
+          </Link>
+        </div>
+      )}
       {/* Active Group Selector Banner / Tabs */}
       {data?.groups && data.groups.length > 0 && (
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -582,13 +600,13 @@ export const StudentProposalPage = () => {
         </div>
 
         <div className="flex items-center space-x-3">
-          {project.status === 'APPROVED' && isLeader && (
+          {project.status === 'APPROVED' && (
             <button
               onClick={() => setIsChangeModalOpen(true)}
               className="flex items-center space-x-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold shadow-md transition-all"
             >
               <Send className="w-4 h-4" />
-              <span>Request Edit</span>
+              <span>Request Edit from Faculty</span>
             </button>
           )}
 
@@ -1149,7 +1167,12 @@ export const StudentProposalPage = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <h3 className="font-bold text-slate-800">Request Project Changes</h3>
+              <div>
+                <h3 className="font-bold text-slate-800">Request Edit from Assigned Faculty</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Assigned Guide: <span className="font-semibold text-slate-700">{project?.facultyGuideId?.name || data?.group?.guideId?.name || 'Faculty Guide'}</span>
+                </p>
+              </div>
               <button onClick={() => setIsChangeModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>

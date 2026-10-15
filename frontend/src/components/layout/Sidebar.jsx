@@ -42,7 +42,6 @@ const MENU_ITEMS_BY_ROLE = {
     { label: 'Wiki', path: '/student/wiki', icon: FileText },
     { label: 'Chat', path: '/student/chat', icon: MessageSquare },
     { label: 'GitHub', path: '/student/github', icon: Github },
-    { label: 'Releases', path: '/student/releases', icon: Layers },
     { label: 'Calendar', path: '/student/calendar', icon: Calendar },
     { label: 'Reviews & Marks', path: '/student/reviews', icon: Award },
   ],

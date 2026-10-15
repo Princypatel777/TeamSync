@@ -219,11 +219,27 @@ export const getStudentMarks = async (req, res, next) => {
       query.projectId = projectId;
       query.studentId = user._id;
     } else if (user.role === 'FACULTY') {
-      const userGroups = await ProjectGroup.find({ facultyId: user._id }).select('_id');
+      const legacyProjects = await Project.find({ facultyGuideId: user._id }).select('_id groupId');
+      const legacyGroupIds = legacyProjects.map(p => p.groupId).filter(Boolean);
+      const userGroups = await ProjectGroup.find({
+        $or: [
+          { guideId: user._id },
+          { coGuideId: user._id },
+          { _id: { $in: legacyGroupIds } }
+        ]
+      }).select('_id');
       const groupIds = userGroups.map(g => g._id);
-      const projects = await Project.find({ groupId: { $in: groupIds } }).select('_id');
+      const projects = await Project.find({
+        $or: [
+          { groupId: { $in: groupIds } },
+          { facultyGuideId: user._id }
+        ]
+      }).select('_id');
       const projectIds = projects.map(p => p._id);
-      query.projectId = { $in: projectIds };
+      query.$or = [
+        { projectId: { $in: projectIds } },
+        { evaluatorId: user._id }
+      ];
     } else if (req.query.projectId) {
       query.projectId = req.query.projectId;
     }

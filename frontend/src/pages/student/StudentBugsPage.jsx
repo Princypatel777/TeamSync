@@ -5,10 +5,11 @@ import StatusBadge from '../../components/common/StatusBadge';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { Bug as BugIcon, Plus, X, Edit2, Calendar, Paperclip, User } from 'lucide-react';
 
-export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null }) => {
+export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null, membersList = null }) => {
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState('ALL');
+  const [formError, setFormError] = useState('');
 
   // Form State
   const [editingBugId, setEditingBugId] = useState(null);
@@ -42,9 +43,10 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
 
   // Fetch Features (for dropdown)
   const { data: featuresData } = useQuery({
-    queryKey: ['agileFeatures'],
+    queryKey: ['agileFeatures', specificProjectId],
     queryFn: async () => {
-      const res = await API.get('/agile/features');
+      const url = specificProjectId ? `/agile/features?projectId=${specificProjectId}` : '/agile/features';
+      const res = await API.get(url);
       return res.data;
     },
   });
@@ -65,10 +67,13 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['agileBugs']);
+      queryClient.invalidateQueries({ queryKey: ['agileBugs'] });
       setIsModalOpen(false);
       resetForm();
     },
+    onError: (err) => {
+      setFormError(err.response?.data?.message || err.message || 'Failed to report bug.');
+    }
   });
 
   // Update Bug Mutation
@@ -78,10 +83,13 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['agileBugs']);
+      queryClient.invalidateQueries({ queryKey: ['agileBugs'] });
       setIsModalOpen(false);
       resetForm();
     },
+    onError: (err) => {
+      setFormError(err.response?.data?.message || err.message || 'Failed to update bug.');
+    }
   });
 
   // Delete Bug Mutation
@@ -91,7 +99,7 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['agileBugs']);
+      queryClient.invalidateQueries({ queryKey: ['agileBugs'] });
     },
     onError: (err) => {
       alert(err.response?.data?.message || 'Failed to delete bug');
@@ -107,13 +115,29 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
     setStatus('OPEN');
     setDueDate('');
     setAttachmentUrl('');
+    setFormError('');
     setEditingBugId(null);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!title.trim()) return;
-    const payload = { title, description, featureId, assigneeId, priority, status, dueDate, attachmentUrl };
+    setFormError('');
+    if (!title.trim()) {
+      setFormError('Bug title is required.');
+      return;
+    }
+    const payload = {
+      title: title.trim(),
+      description: description ? description.trim() : '',
+      featureId: featureId || null,
+      assigneeId: assigneeId || null,
+      priority,
+      status,
+      dueDate: dueDate || null,
+      attachmentUrl: attachmentUrl || '',
+    };
+    if (specificProjectId) payload.projectId = specificProjectId;
+
     if (editingBugId) {
       updateBugMutation.mutate(payload);
     } else {
@@ -131,6 +155,7 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
     setStatus(bug.status || 'OPEN');
     setDueDate(bug.dueDate ? new Date(bug.dueDate).toISOString().split('T')[0] : '');
     setAttachmentUrl(bug.attachmentUrl || '');
+    setFormError('');
     setIsModalOpen(true);
   };
 
@@ -144,7 +169,16 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
 
   const bugs = bugsData?.bugs || [];
   const features = featuresData?.features || [];
-  const members = groupData?.group?.members || [];
+  const rawMembers = membersList || groupData?.members || groupData?.group?.members || [];
+  const members = rawMembers.map(m => {
+    const u = m.user || m.userId || m;
+    return {
+      _id: u._id || m._id,
+      name: u.name || m.name || 'Member',
+      enrollmentNumber: u.enrollmentNumber || m.enrollmentNumber || '',
+      role: m.role || 'MEMBER'
+    };
+  }).filter(m => m._id);
 
   const myUserId = authData?.user?._id;
 
@@ -304,6 +338,11 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
             </div>
 
             <div className="p-5 overflow-y-auto max-h-[70vh]">
+              {formError && (
+                <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-sm font-semibold">
+                  {formError}
+                </div>
+              )}
               <form id="bug-form" onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Bug Title *</label>
@@ -341,16 +380,17 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
                     </select>
                   </div>
                   <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Assign To</label>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Assign To</label>
                     <select
                       value={assigneeId}
                       onChange={(e) => setAssigneeId(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500"
                     >
                       <option value="">Unassigned</option>
-                      <option value={myUserId || ''} className="font-bold text-rose-600">🙋‍♂️ Assign to Me</option>
-                      {members.filter(m => m.user._id !== myUserId).map(m => (
-                        <option key={m.user._id} value={m.user._id}>{m.user.name}</option>
+                      {members.map(m => (
+                        <option key={m._id} value={m._id}>
+                          {m.name} {m.enrollmentNumber ? `(${m.enrollmentNumber})` : ''} {String(m._id) === String(myUserId) ? '— (You)' : ''}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -423,11 +463,10 @@ export const StudentBugsPage = ({ facultyMode = false, specificProjectId = null 
               <button 
                 type="submit" 
                 form="bug-form"
-                onClick={handleSubmit}
                 disabled={createBugMutation.isPending || updateBugMutation.isPending} 
-                className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold shadow-md transition-all"
+                className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold shadow-md transition-all cursor-pointer disabled:opacity-50"
               >
-                {editingBugId ? 'Save Changes' : 'Report Bug'}
+                {createBugMutation.isPending || updateBugMutation.isPending ? 'Submitting...' : editingBugId ? 'Save Changes' : 'Report Bug'}
               </button>
             </div>
           </div>

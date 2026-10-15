@@ -32,6 +32,7 @@ router.delete('/milestones/:id', authorize('STUDENT', 'ADMIN'), deleteMilestone)
 // Wiki
 router.get('/wiki', getWikiPages);
 router.post('/wiki', authorize('STUDENT', 'ADMIN'), saveWikiPage);
+router.put('/wiki/:id', authorize('STUDENT', 'ADMIN'), saveWikiPage);
 router.delete('/wiki/:id', authorize('STUDENT', 'ADMIN'), deleteWikiPage);
 
 // Chat

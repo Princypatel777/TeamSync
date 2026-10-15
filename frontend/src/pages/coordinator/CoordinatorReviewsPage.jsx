@@ -22,7 +22,8 @@ import {
   Download,
   Search,
   Eye,
-  MessageSquare
+  MessageSquare,
+  Send
 } from 'lucide-react';
 
 export const CoordinatorReviewsPage = () => {
@@ -63,6 +64,21 @@ export const CoordinatorReviewsPage = () => {
     queryFn: async () => {
       const res = await API.get('/reviews');
       return res.data;
+    }
+  });
+
+  const publishReviewMutation = useMutation({
+    mutationFn: async (id) => {
+      const res = await API.post(`/reviews/${id}/publish`);
+      return res.data;
+    },
+    onSuccess: (resData) => {
+      queryClient.invalidateQueries(['adminReviews']);
+      queryClient.invalidateQueries(['calendar-events']);
+      alert(resData?.message || 'Review schedule published and sent to all students & faculty!');
+    },
+    onError: (err) => {
+      alert(err.response?.data?.detail || err.response?.data?.message || 'Failed to publish review schedule.');
     }
   });
 
@@ -234,6 +250,21 @@ export const CoordinatorReviewsPage = () => {
                 </div>
                 
                 <div className="flex items-center justify-end gap-2 shrink-0">
+                  {review.status === 'DRAFT' && (
+                    <button 
+                      onClick={() => {
+                        if (confirm(`Send and publish review schedule "${review.title}" to all students and faculty?`)) {
+                          publishReviewMutation.mutate(review._id || review.id);
+                        }
+                      }}
+                      disabled={publishReviewMutation.isPending}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+                      title="Send and publish this review schedule"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>{publishReviewMutation.isPending ? 'Sending...' : 'Send Schedule'}</span>
+                    </button>
+                  )}
                   <button 
                     onClick={() => {
                       setMarksSearchTerm('');
@@ -397,12 +428,25 @@ export const CoordinatorReviewsPage = () => {
             
             <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 rounded-b-xl">
               <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 font-semibold hover:bg-slate-200 rounded-lg transition">Cancel</button>
+              {(!editingReview || editingReview.status === 'DRAFT') && (
+                <button
+                  type="button"
+                  disabled={saveReviewMutation.isPending}
+                  onClick={() => {
+                    saveReviewMutation.mutate({ ...formData, status: 'PUBLISHED' });
+                  }}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-sm transition flex items-center gap-1.5 text-xs"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Publish & Send Now</span>
+                </button>
+              )}
               <button 
                 type="submit" form="createReviewForm"
                 disabled={saveReviewMutation.isPending}
                 className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-sm hover:bg-indigo-700 transition disabled:opacity-50"
               >
-                {saveReviewMutation.isPending ? 'Saving...' : editingReview ? 'Save Changes' : 'Create Review'}
+                {saveReviewMutation.isPending ? 'Saving...' : editingReview ? 'Save Changes' : 'Save as Draft'}
               </button>
             </div>
           </div>

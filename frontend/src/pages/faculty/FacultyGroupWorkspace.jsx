@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import API from '../../services/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import StatusBadge from '../../components/common/StatusBadge';
-import { LayoutDashboard, Users, FileText, ClipboardList, Layers, Kanban, Bug, Flag, FolderGit2, Github, Activity, ArrowLeft, AlertCircle, MessageSquare, Box, Calendar, X, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, ClipboardList, Layers, Kanban, Bug, Flag, FolderGit2, Github, Activity, ArrowLeft, AlertCircle, MessageSquare, Calendar, X, CheckCircle2, ShieldAlert, Target, ArrowUpRight } from 'lucide-react';
 
 import StudentRequirementsPage from '../student/StudentRequirementsPage';
 import StudentKanbanPage from '../student/StudentKanbanPage';
@@ -15,7 +15,6 @@ import StudentFilesPage from '../student/StudentFilesPage';
 import StudentGithubPage from '../student/StudentGithubPage';
 import StudentWikiPage from '../student/StudentWikiPage';
 import StudentChatPage from '../student/StudentChatPage';
-import { StudentReleasesPage } from '../student/StudentReleasesPage';
 import { StudentCalendarPage } from '../student/StudentCalendarPage';
 import { StudentActivityPage } from '../student/StudentActivityPage';
 import { StudentPermissionsPage } from '../student/StudentPermissionsPage';
@@ -59,7 +58,19 @@ export const FacultyGroupWorkspace = () => {
   );
 
   const group = groupData?.group;
-  const project = groupData?.project; // Assuming the API returns the active project
+  const project = groupData?.project;
+  const stats = groupData?.stats || {
+    totalTasks: 0,
+    completedTasks: 0,
+    inProgressTasks: 0,
+    todoTasks: 0,
+    totalBugs: 0,
+    openBugs: 0,
+    resolvedBugs: 0,
+    totalMilestones: 0,
+    totalWikiPages: 0,
+    totalRequirements: 0,
+  };
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -74,7 +85,6 @@ export const FacultyGroupWorkspace = () => {
     { id: 'wiki', label: 'Wiki', icon: FileText },
     { id: 'chat', label: 'Chat', icon: MessageSquare },
     { id: 'github', label: 'GitHub', icon: Github },
-    { id: 'releases', label: 'Releases', icon: Box },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'permissions', label: 'Permissions', icon: ShieldAlert },
@@ -130,10 +140,240 @@ export const FacultyGroupWorkspace = () => {
         {/* Content Area */}
         <div className="flex-1 bg-white border border-slate-200 rounded-xl p-6 shadow-xs min-h-[500px]">
           {activeTab === 'overview' && (
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-slate-800">Project Overview</h2>
-              <p className="text-slate-500 text-sm">Welcome to the faculty workspace. Select a tab on the left to monitor this group's progress.</p>
-              {/* Insert summary cards here */}
+            <div className="space-y-6">
+              {/* Project Hero Card */}
+              <div className="bg-slate-900 text-white rounded-2xl p-6 relative overflow-hidden shadow-md">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <span className="px-2.5 py-1 bg-white/10 rounded-md text-xs font-mono font-bold tracking-wider text-blue-200">
+                        {group?.code || groupId}
+                      </span>
+                      <span className="px-2.5 py-1 bg-blue-500/20 text-blue-300 rounded-md text-xs font-semibold">
+                        {project?.domain || 'General Project'}
+                      </span>
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase ${
+                        project?.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-300' :
+                        project?.status === 'SUBMITTED' ? 'bg-amber-500/20 text-amber-300' :
+                        'bg-slate-700 text-slate-300'
+                      }`}>
+                        {project?.status || 'NO PROJECT'}
+                      </span>
+                    </div>
+                    <h2 className="text-2xl font-bold text-white mb-2">
+                      {project?.title || 'No Project Proposal Created Yet'}
+                    </h2>
+                    <p className="text-slate-300 text-sm max-w-3xl line-clamp-2">
+                      {project?.problemStatement || 'The group has not submitted a detailed problem statement.'}
+                    </p>
+                  </div>
+
+                  <div className="shrink-0 flex flex-col items-start md:items-end gap-2">
+                    {project?.githubRepo && (
+                      <a
+                        href={project.githubRepo}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold transition-colors"
+                      >
+                        <Github className="w-4 h-4" />
+                        <span>GitHub Repo</span>
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => setActiveTab('proposal')}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-colors"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Review Proposal</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tech Stack badges */}
+                {project?.techStack && project.techStack.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-slate-400 font-semibold">Tech Stack:</span>
+                    {project.techStack.map((tech, idx) => (
+                      <span key={idx} className="px-2 py-0.5 bg-white/10 text-slate-200 rounded text-xs font-mono">
+                        {tech}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Progress Summary */}
+              {project && (
+                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Overall Project Completion</span>
+                    <span className="text-sm font-bold text-blue-600">
+                      {stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0}% ({stats.completedTasks}/{stats.totalTasks} Tasks Done)
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 h-2.5 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0}%`
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Metric Cards Grid */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div
+                  onClick={() => setActiveTab('members')}
+                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Team Members</span>
+                    <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Users className="w-4 h-4" /></div>
+                  </div>
+                  <p className="text-2xl font-bold text-slate-800">{group?.members?.length || 0}</p>
+                  <p className="text-xs text-slate-500 mt-1">Leader: {group?.leaderId?.name || 'Assigned'}</p>
+                </div>
+
+                <div
+                  onClick={() => setActiveTab('tasks')}
+                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sprint Tasks</span>
+                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Kanban className="w-4 h-4" /></div>
+                  </div>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalTasks}</p>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                    <span className="text-emerald-600 font-semibold">{stats.completedTasks} Done</span>
+                    <span>•</span>
+                    <span className="text-blue-600 font-semibold">{stats.inProgressTasks} In Progress</span>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveTab('bugs')}
+                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Bug Tracker</span>
+                    <div className="p-2 bg-rose-50 text-rose-600 rounded-lg"><Bug className="w-4 h-4" /></div>
+                  </div>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalBugs}</p>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                    <span className="text-rose-600 font-semibold">{stats.openBugs} Open</span>
+                    <span>•</span>
+                    <span className="text-emerald-600 font-semibold">{stats.resolvedBugs} Fixed</span>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveTab('milestones')}
+                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Milestones & Wiki</span>
+                    <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><Flag className="w-4 h-4" /></div>
+                  </div>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalMilestones} Milestones</p>
+                  <p className="text-xs text-slate-500 mt-1">{stats.totalWikiPages} Wiki Pages Documented</p>
+                </div>
+              </div>
+
+              {/* Project Problem & Objectives details */}
+              {project && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <Target className="w-4 h-4 text-blue-600" /> Problem Statement
+                    </h3>
+                    <p className="text-slate-600 text-sm leading-relaxed">
+                      {project.problemStatement || 'No problem statement recorded.'}
+                    </p>
+                    {project.scope && (
+                      <div className="pt-3 border-t border-slate-200">
+                        <span className="text-xs font-bold text-slate-500 uppercase">Scope:</span>
+                        <p className="text-slate-600 text-sm mt-1">{project.scope}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Key Objectives
+                    </h3>
+                    {project.objectives && project.objectives.length > 0 ? (
+                      <ul className="space-y-2">
+                        {project.objectives.map((obj, i) => (
+                          <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-2 shrink-0"></span>
+                            <span>{obj}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-slate-500 text-sm italic">No specific objectives defined yet.</p>
+                    )}
+
+                    {project.expectedOutcome && (
+                      <div className="pt-3 border-t border-slate-200">
+                        <span className="text-xs font-bold text-slate-500 uppercase">Expected Outcome:</span>
+                        <p className="text-slate-600 text-sm mt-1">{project.expectedOutcome}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Jump Links */}
+              <div>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Workspace Modules</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <button
+                    onClick={() => setActiveTab('tasks')}
+                    className="flex items-center gap-2 p-3 bg-white border border-slate-200 hover:border-blue-400 rounded-xl text-left transition-colors shadow-xs group"
+                  >
+                    <Kanban className="w-5 h-5 text-blue-600 group-hover:scale-110 transition-transform" />
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Sprint Board</p>
+                      <p className="text-[11px] text-slate-500">View tasks</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('bugs')}
+                    className="flex items-center gap-2 p-3 bg-white border border-slate-200 hover:border-rose-400 rounded-xl text-left transition-colors shadow-xs group"
+                  >
+                    <Bug className="w-5 h-5 text-rose-600 group-hover:scale-110 transition-transform" />
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Issue Tracker</p>
+                      <p className="text-[11px] text-slate-500">Bugs & defects</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('wiki')}
+                    className="flex items-center gap-2 p-3 bg-white border border-slate-200 hover:border-emerald-400 rounded-xl text-left transition-colors shadow-xs group"
+                  >
+                    <FileText className="w-5 h-5 text-emerald-600 group-hover:scale-110 transition-transform" />
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Project Wiki</p>
+                      <p className="text-[11px] text-slate-500">Documentation</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('chat')}
+                    className="flex items-center gap-2 p-3 bg-white border border-slate-200 hover:border-indigo-400 rounded-xl text-left transition-colors shadow-xs group"
+                  >
+                    <MessageSquare className="w-5 h-5 text-indigo-600 group-hover:scale-110 transition-transform" />
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Group Chat</p>
+                      <p className="text-[11px] text-slate-500">Communicate</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
           {activeTab === 'members' && (
@@ -206,7 +446,7 @@ export const FacultyGroupWorkspace = () => {
           )}
           {activeTab === 'bugs' && (
             project ? (
-              <StudentBugsPage facultyMode={true} specificProjectId={project.id || project._id} />
+              <StudentBugsPage facultyMode={true} specificProjectId={project.id || project._id} membersList={group?.members} />
             ) : (
               <NoProjectEmptyState />
             )
@@ -248,13 +488,6 @@ export const FacultyGroupWorkspace = () => {
           )}
           {activeTab === 'chat' && (
             <StudentChatPage facultyMode={true} specificGroupId={groupId} />
-          )}
-          {activeTab === 'releases' && (
-            project ? (
-              <StudentReleasesPage facultyMode={true} specificProjectId={project.id || project._id} />
-            ) : (
-              <NoProjectEmptyState />
-            )
           )}
           {activeTab === 'calendar' && (
             project ? (

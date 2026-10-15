@@ -19,8 +19,8 @@ const router = express.Router();
 
 router.use(protect);
 
-// Student endpoints
-router.get('/my-proposal', authorize('STUDENT', 'ADMIN'), getMyProposal);
+// Student & Reviewer endpoints
+router.get('/my-proposal', authorize('STUDENT', 'FACULTY', 'COORDINATOR', 'ADMIN'), getMyProposal);
 router.put('/draft', authorize('STUDENT', 'ADMIN'), saveProposalDraft);
 router.post('/ai-recommendations', authorize('STUDENT', 'ADMIN'), getAiRecommendations);
 router.post('/similarity-check', authorize('STUDENT', 'ADMIN'), runSimilarityCheck);
@@ -33,6 +33,7 @@ router.get('/assigned', authorize('FACULTY', 'COORDINATOR', 'ADMIN'), getAssigne
 router.post('/:id/review', authorize('FACULTY', 'COORDINATOR', 'ADMIN'), reviewProposal);
 router.post('/:id/assign-guide', authorize('COORDINATOR', 'ADMIN'), assignFacultyGuide);
 router.post('/request-edit', authorize('STUDENT', 'ADMIN'), requestEdit);
+router.post('/:id/request-edit', authorize('STUDENT', 'ADMIN'), requestEdit);
 router.delete('/:id', authorize('STUDENT', 'ADMIN', 'COORDINATOR'), deleteProposal);
 
 export default router;

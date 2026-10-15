@@ -90,9 +90,14 @@ export const FacultyDashboardPage = () => {
               <div key={group._id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow">
                 <div className="p-5 flex-1">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded text-xs font-bold font-mono tracking-wider">
-                      {group.code}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded text-xs font-bold font-mono tracking-wider">
+                        {group.code}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">
+                        {group.name}
+                      </span>
+                    </div>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                       group.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
                     }`}>
@@ -101,8 +106,25 @@ export const FacultyDashboardPage = () => {
                   </div>
                   
                   <h3 className="text-lg font-bold text-slate-900 mb-1">
-                    {group.activeProject ? group.activeProject.title : 'No Approved Project'}
+                    {group.activeProject ? group.activeProject.title : 'No Project Submitted'}
                   </h3>
+
+                  {group.activeProject && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        group.activeProject.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        group.activeProject.status === 'SUBMITTED' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                        'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}>
+                        {group.activeProject.status}
+                      </span>
+                      {group.activeProject.domain && (
+                        <span className="text-xs text-slate-500 font-medium">
+                          {group.activeProject.domain}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   
                   <div className="flex items-center space-x-2 text-xs text-slate-500 mb-4">
                     <Users className="w-3.5 h-3.5" />

@@ -18,7 +18,7 @@ export const FacultyMarksPage = () => {
     }
   });
 
-  // Fetch Marks Records
+  // Fetch Rubric Marks Records
   const { data: marksData, isLoading: isMarksLoading } = useQuery({
     queryKey: ['facultyGroupMarksRecords'],
     queryFn: async () => {
@@ -27,14 +27,50 @@ export const FacultyMarksPage = () => {
     }
   });
 
-  if (isGroupsLoading || isMarksLoading) return <LoadingSpinner text="Loading Marks & Evaluation Transcripts..." />;
+  // Fetch Review Marks Records (from Faculty Review Desk)
+  const { data: reviewMarksData, isLoading: isReviewMarksLoading } = useQuery({
+    queryKey: ['allFacultyReviewMarks'],
+    queryFn: async () => {
+      const res = await API.get('/reviews/marks');
+      return res.data;
+    }
+  });
+
+  if (isGroupsLoading || isMarksLoading || isReviewMarksLoading) {
+    return <LoadingSpinner text="Loading Marks & Evaluation Transcripts..." />;
+  }
 
   const groups = groupsData?.groups || [];
-  const markRecords = marksData?.markRecords || [];
+  const rubricRecords = marksData?.markRecords || [];
+  const reviewRecords = (reviewMarksData?.marks || []).map(rm => {
+    const max = rm.reviewId?.maxMarks || 20;
+    const ratio = rm.marks / max;
+    const grade = ratio >= 0.85 ? 'A+' : ratio >= 0.7 ? 'A' : ratio >= 0.5 ? 'B' : 'C';
+
+    return {
+      _id: rm._id,
+      studentId: rm.studentId,
+      projectId: {
+        title: rm.reviewId?.title || 'Review Evaluation',
+        groupId: rm.groupId
+      },
+      reviewStage: rm.reviewId?.type || rm.reviewId?.title || 'Review Stage',
+      totalMarksObtained: rm.marks,
+      maxMarks: max,
+      grade,
+      status: rm.status || 'SUBMITTED',
+      feedback: rm.feedback,
+      createdAt: rm.createdAt
+    };
+  });
+
+  // Combine both sources
+  const allRecords = [...rubricRecords, ...reviewRecords];
 
   // Filter mark records
-  const filteredMarks = markRecords.filter(m => {
-    const matchesGroup = selectedGroupId === 'ALL' || (m.projectId?.groupId?._id === selectedGroupId || m.projectId?.groupId === selectedGroupId);
+  const filteredMarks = allRecords.filter(m => {
+    const gId = m.projectId?.groupId?._id || m.projectId?.groupId?.id || m.projectId?.groupId;
+    const matchesGroup = selectedGroupId === 'ALL' || String(gId) === String(selectedGroupId);
     const studentName = m.studentId?.name || '';
     const enrollNo = m.studentId?.enrollmentNumber || '';
     const matchesSearch = studentName.toLowerCase().includes(searchTerm.toLowerCase()) || enrollNo.toLowerCase().includes(searchTerm.toLowerCase());
@@ -132,7 +168,7 @@ export const FacultyMarksPage = () => {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 font-mono font-black text-slate-900 text-base">
-                      {m.totalMarksObtained} / 100
+                      {m.totalMarksObtained} / {m.maxMarks || 100}
                     </td>
                     <td className="px-5 py-3.5">
                       <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
@@ -146,8 +182,13 @@ export const FacultyMarksPage = () => {
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                        <Lock className="w-3 h-3" /> Draft / Pending Publish
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                        m.status === 'SUBMITTED' 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}>
+                        {m.status === 'SUBMITTED' ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Lock className="w-3 h-3" />}
+                        {m.status === 'SUBMITTED' ? 'Submitted / Recorded' : 'Draft / Pending'}
                       </span>
                     </td>
                   </tr>

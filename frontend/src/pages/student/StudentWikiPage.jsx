@@ -28,14 +28,14 @@ export const StudentWikiPage = ({ facultyMode = false, specificProjectId = null 
 
   const saveWikiMutation = useMutation({
     mutationFn: async (payload) => {
+      const body = {
+        ...payload,
+        projectId: specificProjectId || undefined,
+      };
       if (editingWikiId) {
-        // Mock update endpoint or handle if it exists, otherwise recreate it or just post it if the backend handles it.
-        // Actually, backend saveWikiPage just uses findOneAndUpdate based on ID if we pass it, let's assume POST handles it or we need a PUT.
-        // Looking at collaborationRoutes, there's no PUT for wiki, only POST which updates if ID exists or something.
-        // Wait, saveWikiPage in controller handles creation and updating usually? Let's just use POST.
-        return (await API.post('/collaboration/wiki', payload)).data;
+        return (await API.put(`/collaboration/wiki/${editingWikiId}`, body)).data;
       } else {
-        return (await API.post('/collaboration/wiki', payload)).data;
+        return (await API.post('/collaboration/wiki', body)).data;
       }
     },
     onSuccess: (data) => {
@@ -44,17 +44,24 @@ export const StudentWikiPage = ({ facultyMode = false, specificProjectId = null 
       resetForm();
       if (data.wikiPage) setSelectedWiki(data.wikiPage);
     },
+    onError: (err) => {
+      alert(err.response?.data?.message || 'Failed to save wiki page.');
+    }
   });
 
   const deleteWikiMutation = useMutation({
     mutationFn: async (id) => {
-      const res = await API.delete(`/collaboration/wiki/${id}`);
+      const url = specificProjectId ? `/collaboration/wiki/${id}?projectId=${specificProjectId}` : `/collaboration/wiki/${id}`;
+      const res = await API.delete(url);
       return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['collabWiki']);
       setSelectedWiki(null);
     },
+    onError: (err) => {
+      alert(err.response?.data?.message || 'Failed to delete wiki page.');
+    }
   });
 
   const resetForm = () => {
@@ -83,7 +90,14 @@ export const StudentWikiPage = ({ facultyMode = false, specificProjectId = null 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!title.trim()) return;
-    saveWikiMutation.mutate({ _id: editingWikiId, title, category, content, attachmentUrl });
+    const payload = {
+      title: title.trim(),
+      category,
+      content,
+      attachmentUrl
+    };
+    if (editingWikiId) payload._id = editingWikiId;
+    saveWikiMutation.mutate(payload);
   };
 
 

@@ -92,7 +92,7 @@ export const StudentKanbanPage = ({ facultyMode = false, specificProjectId = nul
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['agileTasks']);
+      queryClient.invalidateQueries({ queryKey: ['agileTasks'] });
       setIsModalOpen(false);
       resetForm();
     },
@@ -105,7 +105,7 @@ export const StudentKanbanPage = ({ facultyMode = false, specificProjectId = nul
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['agileTasks']);
+      queryClient.invalidateQueries({ queryKey: ['agileTasks'] });
       setIsModalOpen(false);
       resetForm();
     },
@@ -117,7 +117,7 @@ export const StudentKanbanPage = ({ facultyMode = false, specificProjectId = nul
       const res = await API.put(`/agile/tasks/${taskId}/status`, { status });
       return res.data;
     },
-    onSuccess: () => queryClient.invalidateQueries(['agileTasks']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['agileTasks'] }),
   });
 
   const deleteTaskMutation = useMutation({
@@ -125,7 +125,7 @@ export const StudentKanbanPage = ({ facultyMode = false, specificProjectId = nul
       const res = await API.delete(`/agile/tasks/${id}`);
       return res.data;
     },
-    onSuccess: () => queryClient.invalidateQueries(['agileTasks']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['agileTasks'] }),
     onError: (err) => alert(err.response?.data?.message || 'Failed to delete task.')
   });
 
@@ -151,8 +151,16 @@ export const StudentKanbanPage = ({ facultyMode = false, specificProjectId = nul
     if (!title.trim()) return setFormError('Task title is required.');
     
     const payload = {
-      title, description, assigneeId, priority,
-      startDate, startTime, dueDate, dueTime, featureId, checklistItemId
+      title: title.trim(),
+      description: description ? description.trim() : '',
+      assigneeId: assigneeId || null,
+      priority,
+      startDate: startDate || null,
+      startTime: startTime || '',
+      dueDate: dueDate || null,
+      dueTime: dueTime || '',
+      featureId: featureId || null,
+      checklistItemId: checklistItemId || null,
     };
     if (specificProjectId) payload.projectId = specificProjectId;
 
@@ -203,7 +211,16 @@ export const StudentKanbanPage = ({ facultyMode = false, specificProjectId = nul
   if (isLoading) return <LoadingSpinner text="Loading Tasks & Kanban..." />;
 
   const tasks = (tasksData?.tasks || []).filter(t => !t.isCalendarEventOnly);
-  const members = membersList || groupData?.group?.members || [];
+  const rawMembers = membersList || groupData?.members || groupData?.group?.members || [];
+  const members = rawMembers.map(m => {
+    const u = m.user || m.userId || m;
+    return {
+      _id: u._id || m._id,
+      name: u.name || m.name || 'Member',
+      enrollmentNumber: u.enrollmentNumber || m.enrollmentNumber || '',
+      role: m.role || 'MEMBER'
+    };
+  }).filter(m => m._id);
   const sprints = sprintsData?.sprints || [];
   const features = featuresData?.features || [];
   const myUserId = authData?.user?._id;
@@ -438,9 +455,10 @@ export const StudentKanbanPage = ({ facultyMode = false, specificProjectId = nul
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Unassigned</option>
-                      {!facultyMode && <option value={myUserId} className="font-bold text-blue-600">🙋‍♂️ Assign to Me</option>}
-                      {members.filter(m => facultyMode || m.user._id !== myUserId).map(m => (
-                        <option key={m.user._id} value={m.user._id}>{m.user.name}</option>
+                      {members.map(m => (
+                        <option key={m._id} value={m._id}>
+                          {m.name} {m.enrollmentNumber ? `(${m.enrollmentNumber})` : ''} {String(m._id) === String(myUserId) ? '— (You)' : ''}
+                        </option>
                       ))}
                     </select>
                   </div>

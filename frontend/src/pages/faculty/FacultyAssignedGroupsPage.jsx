@@ -119,14 +119,32 @@ export const FacultyAssignedGroupsPage = () => {
                           <span className="text-blue-700 font-bold text-xs">{group.code?.split('-').pop() || 'GRP'}</span>
                         </div>
                         <div>
-                          <p className="font-bold text-slate-900 font-mono text-sm">{group.code}</p>
-                          <p className="text-[10px] text-slate-500 uppercase font-semibold">ID: {group.code}</p>
+                          <p className="font-bold text-slate-900 text-sm">{group.name || group.code}</p>
+                          <p className="text-[10px] text-slate-500 font-mono font-semibold">{group.code}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <p className="font-bold text-slate-800 text-sm">{group.activeProject?.title || 'No Approved Project'}</p>
-                      {group.activeProject && (
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{group.activeProject?.title || 'No Project Submitted'}</p>
+                        {group.activeProject && (
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              group.activeProject.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              group.activeProject.status === 'SUBMITTED' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                              'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                              {group.activeProject.status}
+                            </span>
+                            {group.activeProject.domain && (
+                              <span className="text-[10px] text-slate-500 font-medium">
+                                • {group.activeProject.domain}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {group.activeProject && group.activeProject.status === 'APPROVED' && (
                         <div className="w-48 bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden flex items-center">
                           <div 
                             className="bg-blue-600 h-1.5 rounded-full"
